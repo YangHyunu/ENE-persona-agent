@@ -1,441 +1,189 @@
-# Fast-MCP Project
+# Project ENE
 
-Multi-server MCP (Model Context Protocol) 기반 AI 어시스턴트 시스템
+> 내 모니터 위에서 나를 기억하고 함께 일하는 똑똑한 단짝 비서, ENE
 
-## 프로젝트 개요
+**네이버 커넥트 재단 부스트캠프 AI Tech 8기** 최종 프로젝트
 
-Fast-MCP는 여러 MCP 서버를 통합하여 네이버 검색, Discord, Slack, Google Calendar 기능을 제공하는 LangGraph 기반 대화형 AI 어시스턴트입니다.
+## ENE가 뭔가요?
 
-### 주요 기능
+감정을 교류할 수 있는 플로팅 캐릭터가 나만의 비서가 된다면 어떨까요?
 
-- **Naver Search MCP**: 네이버 검색 API를 통한 웹 검색
-- **Discord MCP**: Discord 채널에 메시지 전송, 읽기, 리액션 추가
-- **Slack MCP**: Slack 채널 메시지 관리
-- **Google Calendar MCP**: Google Calendar 일정 조회 및 관리
-- **대화 기록 관리**: 세션 기반 대화 히스토리 저장
+기존 AI 비서(카나나, 에이닷 등)는 모바일·웹 중심이라, PC에서 작업하다가 메일 확인하고 일정 잡고 메시지 보내려면 여전히 탭을 여러 개 열어야 합니다. 캐릭터 서비스는 정해진 대사만 반복하고요.
 
-## 시스템 요구사항
+ENE는 **데스크톱에 상주하면서, 대화만으로 이 모든 걸 처리하는 AI 비서**입니다.
 
-- **Python**: 3.12 이상
-- **Node.js**: 20.x LTS 이상
-- **ngrok**: 외부 접근용 터널링 (Slack MCP SSE 전송)
-- **OS**: macOS / Linux
+- 대화할수록 호감도가 오르고, **말투와 반응이 달라집니다** (10단계 호감도 시스템)
+- 과거 대화를 기억해서 **"저번에 좋아한다던 매운 맛집 찾아봤어요!"** 같은 맥락 있는 답변을 합니다
+- 네이버 검색, Discord/Slack 메시지 전송, Google Calendar 일정 관리를 **대화만으로** 처리합니다
+- PySide6 GUI에서 7가지 감정의 캐릭터 애니메이션이 실시간으로 반응합니다
 
-## 초기 설정
+### 이런 걸 할 수 있습니다
 
-### 1. Node.js 설치
+- **"제주도 맛집 검색해서 디스코드에 보내줘"** — 네이버 검색, 요약, Discord 전송까지 한 번에
+- **"다음 주 빈 시간 확인하고 회의 잡아줘"** — Google Calendar 조회 → 일정 등록
+- **"아까 검색한 맛집 다시 알려줘"** — 과거 대화를 기억해서 맥락을 이어감
 
-#### 방법 1: 자동 설치 스크립트 (Ubuntu 전용)
-```bash
-# Ubuntu/Linux 환경에서만 사용 가능
-sudo bash MCP_agent/Fast-MCP/scripts/setup-nodejs.sh
-```
-**주의**: 이 스크립트는 `apt-get`을 사용하므로 Ubuntu/Debian 계열에서만 작동합니다.
+## 어떻게 동작하나요?
 
-#### 방법 2: 수동 설치
+"제주도 맛집 검색해서 디스코드에 보내줘" — 이 한 마디가 ENE 내부에서 어떻게 처리되는지 따라가 보겠습니다.
 
-**macOS (Homebrew 사용)**:
-```bash
-# Homebrew로 Node.js 설치
-brew install node
+그 전에 한 가지. 이걸 만들 때 가장 어려웠던 건, **페르소나 규칙, 도구 호출 규칙, 과거 대화 기억을 매 턴마다 하나의 프롬프트로 조립해야 한다**는 점이었습니다. 호감도가 바뀌면 말투가 달라지고, 기억이 쌓이면 프롬프트가 달라지고, 도구를 호출하고 돌아올 때마다 맥락이 바뀝니다. 이 조합이 매 턴 다르기 때문에 "한 번 잘 짜놓으면 끝"이 아니라, 매 순간 동적으로 조립해야 합니다.
 
-# 설치 확인
-node --version
-npm --version
-npx --version
+```mermaid
+graph LR
+    START((START)) --> analyzer
+    analyzer --> context_builder
+    context_builder --> agent
+    agent -- 도구 필요 --> tools["MCP Tools\n(Naver·Discord·Slack·Calendar)"]
+    tools --> agent
+    agent -- 응답 완료 --> memory_manager
+    memory_manager --> END((END))
+    memory_manager -. 저장 .-> DB[(ChromaDB)]
+    DB -. 검색 .-> context_builder
 ```
 
-**Ubuntu/Linux**:
-```bash
-# NodeSource repository 추가 (Node.js 20.x LTS)
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo bash -
+### 1단계: 감정 분석 (analyzer)
 
-# Node.js 설치
-sudo apt-get install -y nodejs
+사용자의 말투에서 감정과 호감도 변화를 먼저 읽습니다. "검색해서 보내줘"는 평범한 요청이니 호감도 변화 없이 넘어갑니다. 하지만 "고마워 진짜 최고야!"라고 했다면 호감도가 올라가고, "아 짜증나 왜 맨날 틀려"라고 했다면 내려갑니다.
 
-# 설치 확인
-node --version
-npm --version
-npx --version
-```
+이게 왜 중요하냐면, 호감도에 따라 ENE의 말투가 완전히 달라지기 때문입니다:
 
-### 2. ngrok 설치 및 인증
+| 호감도 | 말투 | 같은 검색 결과를 전달할 때 |
+|--------|------|---------------------------|
+| 0 ~ 9 | 극존칭 하십시오체 | "검색 결과를 안내해 드리겠습니다." |
+| 20 ~ 29 | 정중한 존댓말 | "검색해 봤습니다. 참고해 주세요." |
+| 40 ~ 49 | 온기 있는 해요체 | "찾아봤어요! 여기 맛집 목록이에요~" |
+| 70 ~ 79 | 편한 반말 섞인 해요체 | "오 맛집! 나 이거 찾아놨어요, 봐봐요~" |
+| 90 ~ 100 | 소꿉친구 반말 | "오 제주도 간다고?! 나 맛집 찾아놨어!! 여기 봐봐!!" |
 
-#### ngrok 계정 생성 및 authtoken 받기
-1. https://dashboard.ngrok.com/signup 에서 무료 계정 생성
-2. https://dashboard.ngrok.com/get-started/your-authtoken 에서 authtoken 복사
+호감도(0~100) 10단계와 만남 일수 10단계가 조합되어 **100가지 이상의 페르소나 변화**를 만듭니다. 처음 만난 사람에게 반말하면 어색하듯, ENE도 관계가 쌓여야 편하게 말합니다. 호감도는 SQLite에 영구 저장되므로, 앱을 껐다 켜도 관계가 이어집니다.
 
-#### 방법 1: 자동 설치 (Ubuntu 전용)
-```bash
-# Ubuntu/Linux 환경에서만 사용 가능
-# 먼저 setup-ngrok.sh 파일에서 authtoken을 본인의 토큰으로 변경
-# Line 29: ngrok config add-authtoken YOUR_TOKEN_HERE
+### 2단계: 기억 검색 + 프롬프트 조립 (context_builder)
 
-sudo bash MCP_agent/Fast-MCP/scripts/setup-ngrok.sh
-```
-**주의**: 이 스크립트는 `apt`를 사용하므로 Ubuntu/Debian 계열에서만 작동합니다.
+ChromaDB에서 "제주도", "맛집", "여행"과 관련된 과거 기억을 검색합니다. 3일 전에 "나 다음 주 제주도 가"라고 했다면 그 기억이 함께 프롬프트에 들어갑니다.
 
-#### 방법 2: 수동 설치
+여기서 문제는, **페르소나 말투 + 도구 규칙 + 과거 기억 + 관계 상태를 전부 하나의 시스템 프롬프트에 담아야 한다**는 겁니다. 그런데 LLM은 긴 프롬프트에서 **시작과 끝 정보는 잘 기억하지만, 중간은 놓치는 경향**이 있습니다 (Liu et al., 2023). 아무리 좋은 페르소나를 써놔도 프롬프트 중간에 묻히면 LLM이 그냥 무시합니다.
 
-**macOS (Homebrew 사용)**:
-```bash
-# Homebrew로 ngrok 설치
-brew install ngrok
-
-# authtoken 설정 (YOUR_TOKEN_HERE를 실제 토큰으로 변경)
-ngrok config add-authtoken YOUR_TOKEN_HERE
-
-# 설치 확인
-ngrok version
-```
-
-**Ubuntu/Linux**:
-```bash
-# ngrok 설치
-curl -sSL https://ngrok-agent.s3.amazonaws.com/ngrok.asc \
-  | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
-echo "deb https://ngrok-agent.s3.amazonaws.com bookworm main" \
-  | sudo tee /etc/apt/sources.list.d/ngrok.list
-sudo apt update && sudo apt install ngrok
-
-# authtoken 설정 (YOUR_TOKEN_HERE를 실제 토큰으로 변경)
-ngrok config add-authtoken YOUR_TOKEN_HERE
-
-# 설치 확인
-ngrok version
-```
-
-### 3. Python 환경 설정
-
-```bash
-# 저장소 클론 및 이동
-git clone https://github.com/<your-org>/pro-nlp-finalproject-nlp-05.git
-cd pro-nlp-finalproject-nlp-05
-
-# uv를 사용한 가상환경 설정 및 의존성 설치
-uv venv
-source .venv/bin/activate
-
-# 의존성 설치 (pyproject.toml + uv.lock 기반, 권장)
-uv sync
-
-# 또는 requirements.txt 사용
-uv pip install -r requirements.txt
-```
-
-### 4. 환경변수 설정
-
-프로젝트 루트에 `.env` 파일 생성:
-
-```bash
-# Clova Studio API (HCX-005 모델용)
-CLOVA_STUDIO_API_KEY=your_clova_api_key_here
-CLOVASTUDIO_API_KEY=your_clova_api_key_here
-NCP_CLOVASTUDIO_API_KEY=your_clova_api_key_here
-NCP_CLOVASTUDIO_REQUEST_ID=your_request_id_here
-
-# OpenAI API (선택 사항)
-OPENAI_API_KEY=your_openai_api_key_here
-
-# Naver Search API
-NAVER_CLIENT_ID=your_naver_client_id
-NAVER_CLIENT_SECRET=your_naver_client_secret
-
-# Discord Bot Token
-DISCORD_TOKEN=your_discord_bot_token
-
-# Slack Bot Token
-SLACK_MCP_PORT=3001
-SLACK_MCP_ADD_MESSAGE_TOOL=true
-SLACK_MCP_XOXB_TOKEN=xoxb-your-slack-bot-token
-
-# ngrok URL (start-slack-mcp.sh 실행 시 자동 설정됨)
-SLACK_MCP_URL=https://xxx.ngrok-free.app/sse
-
-# Google Calendar API (OAuth 자격증명 JSON)
-GOOGLE_CREDENTIALS_JSON='{"installed":{"client_id":"...","project_id":"...","auth_uri":"...","token_uri":"...","auth_provider_x509_cert_url":"...","client_secret":"...","redirect_uris":["..."]}}'
-```
-
-`.env.example` 파일을 참고하여 작성할 수 있습니다.
-
-#### API 키 발급 방법
-
-- **Clova Studio**: https://www.ncloud.com/product/aiService/clovaStudio
-  - 네이버 클라우드 플랫폼 가입 후 HCX-005 API 키 발급
-
-- **Naver Search API**: https://developers.naver.com/products/search/
-  - 네이버 개발자 센터에서 애플리케이션 등록 후 Client ID/Secret 발급
-
-- **Discord Bot**: https://discord.com/developers/applications
-  1. New Application 생성
-  2. Bot 탭에서 Bot 추가
-  3. Token 복사 (한 번만 표시됨)
-  4. Privileged Gateway Intents에서 MESSAGE CONTENT INTENT 활성화
-
-- **Slack Bot**: https://api.slack.com/apps
-  1. Create New App → From scratch
-  2. OAuth & Permissions에서 Bot Token Scopes 추가:
-     - `channels:history`
-     - `channels:read`
-     - `chat:write`
-     - `groups:history`
-     - `groups:read`
-  3. Install to Workspace
-  4. Bot User OAuth Token (xoxb-로 시작) 복사
-
-- **Google Cloud Console**:                      
-  - 1단계: Google Cloud Console에서 프로젝트 생성                                                                       
-    1. https://console.cloud.google.com 접속                                                            
-    2. 상단의 프로젝트 선택 → 새 프로젝트 클릭                                                          
-    3. 프로젝트 이름 입력 (예: calendar-mcp) → 만들기                     
-  - 2단계: Google Calendar API 활성화                          
-    1. 좌측 메뉴 → API 및 서비스 → 라이브러리                                                           
-    2. "Google Calendar API" 검색                                                                       
-    3. 사용 설정 클릭                         
-  - 3단계: OAuth 동의 화면 설정                          
-    1. API 및 서비스 → OAuth 동의 화면                                                                  
-    2. User Type: 외부 선택 → 만들기                                                                    
-    3. 앱 이름, 사용자 지원 이메일 입력                                                                 
-    4. 범위 추가: https://www.googleapis.com/auth/calendar.events                                       
-    5. 테스트 사용자에 본인 Gmail 추가                            
-  - 4단계: OAuth 자격증명 생성                            
-    1. API 및 서비스 → 사용자 인증 정보                                                                 
-    2. + 사용자 인증 정보 만들기 → OAuth 클라이언트 ID                                                  
-    3. 애플리케이션 유형: 데스크톱 앱 ⚠️ (중요!)                                                        
-    4. 이름 입력 → 만들기        
-    5. JSON 다운로드 클릭  
-    .env에 GOOGLE_CREDENTIALS_JSON='your_json_here'({"web":...})      
-  
-
-## 실행 방법
-
-### 1. MCP 서버 시작
-
-```bash
-# 프로젝트 루트에서 실행
-bash MCP_agent/Fast-MCP/scripts/start-slack-mcp.sh
-```
-
-**실행되는 서버:**
-- **Naver Search MCP**: http://localhost:8000/mcp/
-- **Discord MCP**: http://localhost:8001/mcp/
-- **Google Calendar MCP**: http://localhost:8002/mcp/
-- **Slack MCP Server**: http://localhost:3001 (ngrok 필요)
-
-### 2. CLOVA MCP 에이전트 실행
-
-**새 터미널**을 열고:
-
-```bash
-source .venv/bin/activate
-
-python MCP_agent/agent/clova_mcp_gui.py
-```
-
-이 에이전트는:
-- CLOVA X (HyperCLOVA) 기반 대화
-- MCP 서버 도구 통합 (Naver Search, Discord, Slack, Google Calendar)
-- 페르소나/메모리 기능 지원
-- 감정 분석 및 호감도 관리
-
-## 사용 예시
-
-### 대화형 AI 어시스턴트
+그래서 프롬프트를 이렇게 설계했습니다:
 
 ```
-🔗 Slack MCP URL: https://abc123.ngrok-free.app/sse
-세션 ID를 입력하세요(새 세션 시작은 Enter): [Enter 입력]
-새 세션이 생성되었습니다. 세션 ID: 550e8400-e29b-41d4-a716-446655440000
-현재 세션 ID: 550e8400-e29b-41d4-a716-446655440000
-
-안녕하세요. 저는 AI 어시스턴트입니다. (종료: '종료')
-
-사용자: 안녕하세요
-AI 어시스턴트: 안녕하세요! 무엇을 도와드릴까요?
-
-사용자: 2024년 AI 트렌드를 검색해줘
-
-[도구]: web_search
-[입력]: {'query': '2024년 AI 트렌드', 'display': 20, 'start': 1, 'sort': 'sim'}
-[응답]: {'query': '2024년 AI 트렌드', 'total': 15234, 'items': [{'title': '2024년 AI 트렌드 전망', ...}]}...
-
-AI 어시스턴트: 2024년 AI 트렌드를 검색한 결과, 주요 트렌드는...
+┌──────────────────────────────────────────────┐
+│ <persona>                        ← 핵심      │  시작 (잘 기억)
+│   말투 + 호감도 + 관계 상태                  │
+│                                               │
+│ <memories>  과거 기억             ← 참고      │
+│ <tools>     사용 가능한 도구                  │  중간
+│ <timestamp> 현재 시각                         │
+│                                               │
+│ <response_format>  JSON 스키마   ← 핵심       │  끝 (잘 기억)
+│ <rules>  말투 유지 리마인더                   │
+└──────────────────────────────────────────────┘
 ```
 
-### Discord 메시지 전송
+페르소나 말투를 맨 위에, 응답 형식을 맨 아래에 둬서 LLM이 "어떻게 말해야 하는지"를 절대 잊지 않게 합니다. 기억 리스트도 관련도 높은 기억을 양 끝에 배치하고, 토큰 budget(2048)을 초과하면 관련도 낮은 것부터 제거합니다.
 
-```
-사용자: 디스코드 채널 1234567890에 "프로젝트 완료!" 메시지 보내줘
+### 3단계: 응답 생성 + 도구 호출 (agent)
 
-[도구]: send_message
-[입력]: {'channel_id': '1234567890', 'content': '프로젝트 완료!'}
-[응답]: Message sent successfully. Message ID: 9876543210
+조립된 프롬프트를 받은 agent가 "맛집을 검색해야 하니까 naver_blog_search를 호출하자"고 판단합니다. 검색 결과를 받아서 요약한 뒤, "Discord에 보내야 하니까 send_message를 호출하자"고 다시 판단합니다. 이렇게 **생각 → 도구 호출 → 결과 확인 → 다시 생각**을 반복하는 ReAct 루프 덕분에, 단순 응답이 아니라 실제 작업 수행이 가능합니다.
 
-AI 어시스턴트: Discord 채널에 메시지를 성공적으로 전송했습니다.
-```
+이 루프가 돌 때마다 새로운 정보(검색 결과, 도구 응답)가 컨텍스트에 쌓이면서 페르소나가 흐려질 수 있습니다. 앞서 프롬프트 시작과 끝에 페르소나를 고정해둔 이유이기도 합니다.
 
-### Slack 채널 목록 조회
+여기서 검색은 실수해도 괜찮지만 **메시지 전송은 되돌릴 수 없으므로**, ENE가 먼저 물어봅니다: "디스코드 #여행 채널에 보내도 될까요?" 사용자가 확인해야만 전송됩니다. 이렇게 안전한 도구(검색, 조회)는 자동 실행하고, 민감한 도구(전송, 수정)는 사용자 승인을 거치는 구조입니다.
 
-```
-사용자: 슬랙 채널 목록 보여줘
+### 4단계: 기억 저장 (memory_manager)
 
-[도구]: channels_list
-[입력]: {'channel_types': 'public_channel,private_channel'}
-[응답]: [{'id': 'C123456', 'name': 'general'}, ...]
+대화가 끝나면 이 대화를 기억합니다. 다음에 "아까 그 맛집 다시 알려줘"라고 하면 ChromaDB에서 꺼내옵니다.
 
-AI 어시스턴트: 사용 가능한 Slack 채널은 다음과 같습니다: general, random, dev...
-```
+그런데 LLM의 Context Window는 유한합니다. 기억이 쌓일수록 프롬프트가 길어지고, 결국 페르소나나 도구 규칙을 밀어내게 됩니다. 그래서 대화가 길어지면 오래된 내용을 **Clova Summary API로 요약**해서 장기 메모리(ChromaDB)에 아카이브합니다. 단기 메모리(SQLite)가 현재 흐름을 유지하고, 장기 메모리가 과거를 보존하는 이중 구조 덕분에 "지난주에 한 이야기"도 기억할 수 있습니다.
+
+> 프롬프트 설계 상세는 [`docs/개선1.md`](docs/개선1.md) 참조
 
 ## 프로젝트 구조
 
 ```
 .
-├── MCP_agent/                          # 메인 에이전트 모듈
-│   ├── graph.py                        # 표준 ReAct 패턴 LangGraph
-│   ├── agent/                          # 에이전트 구현
-│   │   ├── clova_mcp_gui.py            # PySide6 GUI 버전 (메인)
-│   │   ├── persona_logic.py            # 페르소나 로직
-│   │   └── assets/                     # 캐릭터 이미지
-│   ├── memory/                         # 메모리 모듈
-│   │   ├── chroma_adapters.py          # ChromaDB 어댑터
-│   │   ├── clova_adapters.py           # Clova 어댑터
-│   │   └── interfaces.py              # 메모리 인터페이스
-│   ├── nodes/                          # LangGraph 노드
-│   │   ├── analyzer.py                 # 감정/호감도 분석
-│   │   ├── context_builder.py          # 컨텍스트 빌더
-│   │   └── memory_manager.py           # 메모리 매니저
-│   └── Fast-MCP/                       # MCP 서버 모듈
-│       ├── mcp_servers/
-│       │   ├── naver_mcp.py            # 네이버 검색 MCP
-│       │   ├── discord-mcp.py          # Discord MCP
-│       │   └── google_calendar_mcp.py  # Google Calendar MCP
-│       ├── scripts/
-│       │   ├── start-slack-mcp.sh      # MCP 서버 통합 실행
-│       │   ├── setup-nodejs.sh         # Node.js 설치 (Ubuntu)
-│       │   └── setup-ngrok.sh          # ngrok 설치 (Ubuntu)
-│       └── src/
-│           └── client.py               # MCP 클라이언트
-├── .env.example                        # 환경변수 템플릿
-├── pyproject.toml                      # Python 프로젝트 설정 (uv)
-├── requirements.txt                    # pip 의존성
-└── uv.lock                             # uv 락 파일
+├── MCP_agent/                     # 메인 에이전트
+│   ├── graph.py                   # LangGraph 파이프라인
+│   ├── config.py                  # MCP 서버 설정
+│   ├── agent/                     # GUI, CLI, 페르소나 로직
+│   ├── nodes/                     # analyzer, context_builder, memory_manager
+│   ├── memory/                    # ChromaDB 어댑터, 인터페이스
+│   └── utils/                     # Clova Studio 실행기
+│
+├── mcp_servers/                   # MCP 서버 (독립 실행)
+│   ├── naver_mcp.py               # Naver 검색 (port 8000)
+│   ├── discord-mcp.py             # Discord (port 8001)
+│   └── scripts/                   # 서버 시작/설치 스크립트
+│
+├── evaluation/                    # 평가 프레임워크
+│   ├── deep_eval_pr.py            # ArenaGEval 블라인드 비교
+│   ├── deep_eval_tool.py          # Tool Call 정확도 평가
+│   ├── eval_ab.py                 # A/B 테스트
+│   └── configs/                   # 평가 시나리오/메트릭 설정
+│
+└── docs/                          # 설계 문서
 ```
 
-## 트러블슈팅
+## 설치 및 실행
 
-### ngrok 연결 실패
+### 1. 환경 설정
 
-**증상**: `httpx.ConnectTimeout` 또는 `404 Not Found` 에러
-
-**해결 방법**:
 ```bash
-# ngrok 설정 확인
-ngrok config check
+git clone https://github.com/YangHyunu/ENE-persona-agent.git
+cd ENE-persona-agent
 
-# ngrok 프로세스 확인
-ps aux | grep ngrok
-
-# ngrok 대시보드 접근 (터널 상태 확인)
-curl http://localhost:4040/api/tunnels
-# 또는 브라우저에서: http://localhost:4040
+uv venv && source .venv/bin/activate
+uv sync
 ```
 
-**ngrok 무료 플랜 제약**:
-- 무료 플랜은 브라우저 경고 페이지가 먼저 표시됨
-- API 클라이언트는 이 경고를 건너뛸 수 없어 타임아웃 발생 가능
-- 해결: 브라우저에서 한 번 `ngrok URL`을 열고 "Visit Site" 클릭
+### 2. 환경변수
 
-### MCP 서버 연결 실패
+`.env.example`을 참고하여 `.env` 파일 생성:
 
-**증상**: `ConnectionRefusedError` 또는 서버 응답 없음
-
-**확인 방법**:
 ```bash
-# 서버 프로세스 확인
-ps aux | grep python | grep mcp
-ps aux | grep npx
-
-# 포트별 연결 테스트
-curl http://localhost:8000/mcp/  # Naver Search MCP
-curl http://localhost:8001/mcp/  # Discord MCP
-curl http://localhost:8002/mcp/  # Google Calendar MCP
-curl http://localhost:3001       # Slack MCP
-
-# 포트 사용 확인
-# macOS:
-lsof -i -P | grep -E '8000|8001|8002|3001'
-# Linux:
-netstat -tulpn | grep -E '8000|8001|8002|3001'
+OPENAI_API_KEY=your_openai_api_key
+NCP_CLOVASTUDIO_API_KEY=your_clova_api_key
+NAVER_CLIENT_ID=your_naver_client_id
+NAVER_CLIENT_SECRET=your_naver_client_secret
+DISCORD_TOKEN=your_discord_bot_token
 ```
 
-**서버 재시작**:
+### 3. 실행
+
 ```bash
-# 기존 프로세스 종료
-pkill -f "python.*mcp"
-pkill -f "npx.*slack-mcp"
-pkill ngrok
+# MCP 서버 시작
+bash mcp_servers/scripts/start-slack-mcp.sh
 
-# 서버 재시작
-bash MCP_agent/Fast-MCP/scripts/start-slack-mcp.sh
+# 에이전트 실행 (새 터미널)
+python MCP_agent/agent/clova_mcp_gui.py
 ```
 
-### SQLite Pickle 에러
+## 평가
 
-**증상**: `cannot pickle 'sqlite3.Connection' object`
+위에서 설명한 프롬프트 설계와 호감도 시스템이 정말 효과가 있는지, DeepEval 기반으로 검증했습니다.
 
-**임시 해결**:
+- **프롬프트 품질 비교** — ArenaGEval로 8개 메트릭(페르소나 유지, 맥락 활용, 자연스러움 등)을 블라인드 비교
+- **도구 호출 정확도** — 33개 시나리오에서 올바른 도구를 올바른 인자로 호출하는지 평가
+- **A/B 테스트** — 동일 입력에 대해 프롬프트 전략별 응답 품질을 반복 비교
+
 ```bash
-# checkpoint.db 파일 삭제 및 재생성
-rm MCP_agent/Fast-MCP/scripts/checkpoint.db
-touch MCP_agent/Fast-MCP/scripts/checkpoint.db
-
-# 클라이언트 재실행
-python MCP_agent/Fast-MCP/src/client.py
+python evaluation/deep_eval_pr.py        # 블라인드 비교 (8개 메트릭)
+python evaluation/deep_eval_tool.py      # Tool Call 정확도 (33개 시나리오)
+python evaluation/eval_ab.py --rounds 10 # A/B 테스트
+python evaluation/compare_prompt.py      # 프롬프트 구조 비교
 ```
 
-**근본 해결**:
-- `AsyncSqliteSaver` 대신 `MemorySaver` 사용 (코드 수정 필요)
-- 패키지 버전 다운그레이드
+## 기술 스택
 
-### Discord 봇이 응답하지 않음
+Python, LangGraph, LangChain, FastMCP, ChromaDB, PySide6, OpenAI API, NCP Clova Studio, DeepEval
 
-**확인 사항**:
-1. `.env`의 `DISCORD_TOKEN`이 올바른지 확인
-2. Discord 개발자 포털에서 MESSAGE CONTENT INTENT 활성화 확인
-3. 봇이 서버에 초대되었는지 확인
+## 링크
 
-### Slack 봇 channel_not_found 에러
-
-**원인**: 봇이 해당 채널에 접근 권한이 없음
-
-**해결**:
-1. Slack 워크스페이스에서 해당 채널로 이동
-2. `/invite @봇이름` 명령으로 봇 초대
-3. 또는 채널 설정 → Integrations → Add apps에서 봇 추가
-
-## 주의사항
-
-### 보안
-- `.env` 파일에는 민감한 API 키가 포함되므로 **절대 Git에 커밋하지 마세요**
-- `.gitignore`에 `.env` 추가 권장
-
-### ngrok URL 자동 업데이트
-- `SLACK_MCP_URL`은 `start-slack-mcp.sh` 실행 시 자동으로 `.env`에 저장됩니다
-- ngrok 재시작 시마다 URL이 변경되므로 재실행 필요
-
-### 비동기 실행 구조
-- **Discord MCP 서버**: 2개의 독립적인 이벤트 루프 사용
-  - 메인 루프: Discord 봇 (24시간 메시지 수신)
-  - 별도 스레드: FastMCP HTTP 서버 (MCP 요청 처리)
-  - 크로스-스레드 통신: `asyncio.run_coroutine_threadsafe` 사용
-
-### 대화 기록 저장
-- SQLite 기반 checkpoint 사용 시 세션 ID로 이전 대화 복원 가능
-- MemorySaver 사용 시 프로그램 재시작 시 대화 기록 소실
+- [프로젝트 소개 페이지](https://ait8networkingday.oopy.io/302f145d-e995-8163-816c-f6e0a5119fe2)
+- [데모 사이트](https://yanghyunu.github.io/ENE_html/)
+- [발표 영상](https://youtu.be/TSgeEeFh40o)
 
 ## 참고 자료
 
-- [FastMCP Documentation](https://github.com/jlowin/fastmcp)
-- [LangGraph Documentation](https://langchain-ai.github.io/langgraph/)
-- [MCP Protocol](https://modelcontextprotocol.io/)
-- [ngrok Documentation](https://ngrok.com/docs)
+- [LangGraph](https://langchain-ai.github.io/langgraph/) / [FastMCP](https://github.com/jlowin/fastmcp) / [MCP Protocol](https://modelcontextprotocol.io/) / [DeepEval](https://docs.confident-ai.com/)
+- Liu et al., 2023 — "Lost in the Middle: How Language Models Use Long Contexts"
