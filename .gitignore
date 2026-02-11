@@ -1,0 +1,68 @@
+# Environment
+.env
+.env.*
+!.env.example
+
+# Python
+.venv
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+
+# Node
+node_modules/
+
+# IDE / Editor
+.claude
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# AI Generated docs (regeneratable)
+AGENTS.md
+**/AGENTS.md
+.omc/
+docs/개선*.md
+
+# Database
+chroma_db/
+chroma_db_discord/
+*.sqlite*
+
+# DeepEval cache
+.deepeval/
+**/.deepeval/
+
+# Evaluation results (regeneratable)
+evaluation/results/
+
+# Runtime artifacts
+last_session.txt
+character_preference.txt
+
+# Project specific
+removed_summaries.txt
+persona_states.json
+persona/test_persistence.py
+
+# Lock files (regeneratable)
+uv.lock
+
+# Misc temp
+*.tmp
+*.bak
+.gitkeep
+refactoring_summary.md
+
+# Logs
+*.log
+logs/
+.groupedtimelineinclude
+
+# MCP server runtime
+mcp_servers/scripts/checkpoint.db

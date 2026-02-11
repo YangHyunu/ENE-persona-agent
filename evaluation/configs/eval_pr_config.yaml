@@ -1,0 +1,109 @@
+# ══════════════════════════════════════════════════════════
+# eval_pr_config.yaml - 프롬프트 품질 평가 설정
+# deep_eval_pr.py에서 참조
+# ══════════════════════════════════════════════════════════
+
+# ── 시나리오 시드 (LLM이 자동 생성할 질문의 카테고리) ──
+scenario_seeds:
+  - category: "일상 대화"
+    description: "가벼운 인사, 안부, 날씨, 일상 공유"
+  - category: "정보 검색"
+    description: "맛집 추천, 여행지, 쇼핑, 장소 검색 요청"
+  - category: "감정 표현"
+    description: "힘들다, 고마워, 슬퍼, 기뻐 등 감정적 대화"
+  - category: "닉네임/관계 변경"
+    description: "나를 OO라고 불러줘, 넌 내 친구야 등 설정 변경"
+  - category: "멀티턴 요청"
+    description: "검색 후 디스코드 or 슬랙 전송,디스코드 메시지 읽어서 요약하기, 이전 대화 참조 하여 이벤트나 스몰토크 등 복합 요청"
+  - category: "예외/엉뚱한 질문"
+    description: "의미 불명, 모순된 질문, 엉뚱한 주제 등"
+  - category: "시간/날짜 관련"
+    description: "오늘 날짜, 기념일, 일정 관리 등 시간 관련 질문"
+
+# ── GEval 메트릭 ──
+# params 값: INPUT, ACTUAL_OUTPUT, EXPECTED_OUTPUT, CONTEXT, RETRIEVAL_CONTEXT
+metrics:
+  # --- 기존 5개 ---
+  - name: "페르소나 말투 일관성"
+    criteria: "AI 응답이 호감도 {intimacy}에 맞는 말투를 유지하는지 평가. 기대 말투: {expected_tone}"
+    evaluation_steps:
+      - "응답의 어미가 기대 말투에 맞는지 확인"
+      - "기대와 다른 격식 수준(너무 높거나 낮은)이면 감점"
+      - "전체 응답에서 말투가 일관되는지 확인"
+    params: [INPUT, ACTUAL_OUTPUT]
+    threshold: 0.5
+
+  - name: "JSON 형식 준수"
+    criteria: >
+      AI 응답이 반드시 JSON 형식을 포함하는지 평가.
+      필수 필드: "답변"(비어있지 않은 문자열), "감정"(basic|angry|busy|happy|love|pouting|sad),
+      "호감도변화"(정수), "nickname"(문자열), "relation"(문자열)
+    evaluation_steps:
+      - "응답에 유효한 JSON 객체가 포함되어 있는지 확인"
+      - "JSON에 '답변' 필드가 존재하고 비어있지 않은지 확인"
+      - "JSON에 '감정' 필드가 7가지 중 하나인지 확인"
+      - "'호감도변화', 'nickname', 'relation' 필드가 존재하는지 확인"
+    params: [INPUT, ACTUAL_OUTPUT]
+    threshold: 0.5
+
+  - name: "감정 반응 적절성"
+    criteria: "사용자의 감정이나 의도에 AI가 적절하게 반응하는지 평가. 슬플 때 위로, 기쁠 때 공감, 요청 시 행동."
+    evaluation_steps:
+      - "사용자 입력의 감정/의도를 파악"
+      - "AI 응답이 해당 감정에 공감하거나 적절히 반응하는지 확인"
+      - "무관한 응답이거나 감정을 무시하면 감점"
+    params: [INPUT, ACTUAL_OUTPUT]
+    threshold: 0.5
+
+  - name: "기억 활용"
+    criteria: "AI가 사용자 프로필(닉네임, 서울 거주, 매운 음식 좋아함, 강남 맛집 문의 이력)을 응답에 자연스럽게 반영하는지 평가."
+    evaluation_steps:
+      - "응답에서 사용자를 닉네임으로 호칭하는지 확인"
+      - "관련 맥락(서울, 매운 음식 등)이 자연스럽게 반영되었는지 확인"
+      - "기억과 무관한 질문에서는 억지로 끼워넣지 않아야 함"
+    params: [INPUT, ACTUAL_OUTPUT]
+    threshold: 0.5
+
+  - name: "이모지 미사용"
+    criteria: "AI 응답에 이모지가 포함되어 있지 않은지 평가. 페르소나 규칙상 이모지 사용 금지."
+    evaluation_steps:
+      - "응답에 이모지가 하나라도 있으면 0점"
+      - "텍스트만으로 구성되어 있으면 1점"
+    params: [ACTUAL_OUTPUT]
+    threshold: 0.5
+
+  # --- analyzer 평가용 3개 추가 ---
+  - name: "호감도 변화 적절성"
+    criteria: >
+      JSON의 "호감도변화" 값이 사용자 입력에 적절한지 평가.
+      긍정적 대화(감사, 칭찬)→양수, 부정적 대화(욕설, 불만)→음수, 중립(일상 질문)→0.
+      범위는 -5~+5 정수.
+    evaluation_steps:
+      - "사용자 입력의 감정적 방향(긍정/부정/중립)을 파악"
+      - "호감도변화 값이 해당 방향과 일치하는지 확인"
+      - "변화량이 과도하거나(일상 질문에 +5) 부적절하면 감점"
+    params: [INPUT, ACTUAL_OUTPUT]
+    threshold: 0.5
+
+  - name: "감정 분류 정확성"
+    criteria: >
+      JSON의 "감정" 필드가 대화 맥락에 맞는 값인지 평가.
+      슬픈 대화→sad, 기쁜 대화→happy, 사랑 표현→love, 화난 대화→angry,
+      바쁜 상황→busy, 삐침→pouting, 일반→basic.
+    evaluation_steps:
+      - "사용자 입력에서 감정적 맥락을 파악"
+      - "AI가 선택한 감정 값이 맥락에 맞는지 확인"
+      - "전혀 맞지 않는 감정이면 0점 (예: 슬픈 대화인데 happy)"
+    params: [INPUT, ACTUAL_OUTPUT]
+    threshold: 0.5
+
+  - name: "닉네임/관계 변경 감지"
+    criteria: >
+      사용자가 닉네임이나 관계 변경을 요청했을 때 JSON의 "nickname"/"relation" 필드에
+      올바른 값이 채워지는지 평가. 변경 요청이 없으면 빈 문자열이어야 함.
+    evaluation_steps:
+      - "사용자 입력에 닉네임/관계 변경 요청이 있는지 확인"
+      - "요청이 있으면 해당 필드에 올바른 값이 들어갔는지 확인"
+      - "요청이 없는데 값이 채워져 있으면 감점"
+    params: [INPUT, ACTUAL_OUTPUT]
+    threshold: 0.5

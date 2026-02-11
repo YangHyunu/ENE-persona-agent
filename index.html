@@ -1,0 +1,2467 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ENE | LangGraph 기반 Multi-Server MCP AI 어시스턴트</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+    <style>
+        /* ========================================
+           CSS CUSTOM PROPERTIES
+           ======================================== */
+        :root {
+            --bg-root: #ffffff;
+            --bg-raised: #f5f5f8;
+            --bg-surface: #eeeef2;
+            --bg-card: rgba(255, 255, 255, 0.8);
+
+            --purple: #7c3aed;
+            --purple-dim: rgba(124, 58, 237, 0.08);
+            --purple-glow: rgba(124, 58, 237, 0.2);
+            --blue: #2563eb;
+            --blue-dim: rgba(37, 99, 235, 0.08);
+            --blue-glow: rgba(37, 99, 235, 0.2);
+            --cyan: #0891b2;
+            --cyan-dim: rgba(8, 145, 178, 0.08);
+            --cyan-glow: rgba(8, 145, 178, 0.2);
+            --orange: #d97706;
+            --orange-dim: rgba(217, 119, 6, 0.08);
+            --orange-glow: rgba(217, 119, 6, 0.15);
+            --pink: #db2777;
+            --pink-dim: rgba(219, 39, 119, 0.08);
+            --pink-glow: rgba(219, 39, 119, 0.2);
+            --green: #16a34a;
+            --green-dim: rgba(22, 163, 74, 0.08);
+            --red: #dc2626;
+
+            --text-primary: #1a1a2e;
+            --text-secondary: #4a4a60;
+            --text-muted: #8a8a9e;
+
+            --glass-bg: rgba(255, 255, 255, 0.6);
+            --glass-border: rgba(0, 0, 0, 0.08);
+            --glass-hover: rgba(0, 0, 0, 0.03);
+
+            --radius-sm: 8px;
+            --radius-md: 12px;
+            --radius-lg: 16px;
+            --radius-xl: 20px;
+
+            --font-body: 'Noto Sans KR', sans-serif;
+            --font-mono: 'JetBrains Mono', monospace;
+
+            --header-height: 64px;
+        }
+
+        /* ========================================
+           RESET & BASE
+           ======================================== */
+        *, *::before, *::after {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html {
+            scroll-behavior: smooth;
+            scroll-padding-top: calc(var(--header-height) + 24px);
+        }
+
+        body {
+            font-family: var(--font-body);
+            background: var(--bg-root);
+            color: var(--text-primary);
+            line-height: 1.75;
+            overflow-x: hidden;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        /* ========================================
+           AMBIENT BACKGROUND
+           ======================================== */
+        .ambient {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            pointer-events: none;
+            overflow: hidden;
+        }
+
+        .ambient::before {
+            content: '';
+            position: absolute;
+            width: 800px;
+            height: 800px;
+            top: -200px;
+            left: -200px;
+            background: radial-gradient(circle, rgba(124, 58, 237, 0.04) 0%, transparent 70%);
+            animation: ambientDrift 25s ease-in-out infinite;
+        }
+
+        .ambient::after {
+            content: '';
+            position: absolute;
+            width: 700px;
+            height: 700px;
+            bottom: -150px;
+            right: -150px;
+            background: radial-gradient(circle, rgba(8, 145, 178, 0.03) 0%, transparent 70%);
+            animation: ambientDrift 30s ease-in-out infinite reverse;
+        }
+
+        @keyframes ambientDrift {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            33% { transform: translate(80px, 40px) scale(1.1); }
+            66% { transform: translate(-40px, 80px) scale(0.95); }
+        }
+
+        /* Noise overlay */
+        .noise {
+            position: fixed;
+            inset: 0;
+            z-index: 1;
+            pointer-events: none;
+            opacity: 0.015;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+            background-repeat: repeat;
+            background-size: 256px 256px;
+        }
+
+        /* ========================================
+           HEADER
+           ======================================== */
+        .header {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            height: var(--header-height);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 clamp(20px, 4vw, 48px);
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(20px) saturate(1.4);
+            -webkit-backdrop-filter: blur(20px) saturate(1.4);
+            border-bottom: 1px solid var(--glass-border);
+        }
+
+        .header-logo {
+            font-family: var(--font-mono);
+            font-size: 1.15rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--purple), var(--cyan));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: -0.02em;
+        }
+
+        .header-nav {
+            display: flex;
+            gap: 4px;
+        }
+
+        .header-nav a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.82rem;
+            font-weight: 500;
+            padding: 6px 14px;
+            border-radius: var(--radius-sm);
+            transition: color 0.2s, background 0.2s;
+        }
+
+        .header-nav a:hover {
+            color: var(--text-primary);
+            background: var(--glass-hover);
+        }
+
+        .header-hamburger {
+            display: none;
+            flex-direction: column;
+            gap: 5px;
+            cursor: pointer;
+            background: none;
+            border: none;
+            padding: 8px;
+        }
+
+        .header-hamburger span {
+            display: block;
+            width: 22px;
+            height: 2px;
+            background: var(--text-secondary);
+            border-radius: 2px;
+            transition: transform 0.3s, opacity 0.3s;
+        }
+
+        /* ========================================
+           LAYOUT
+           ======================================== */
+        .page-content {
+            position: relative;
+            z-index: 2;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 clamp(20px, 4vw, 48px);
+        }
+
+        section {
+            padding: 100px 0;
+        }
+
+        /* ========================================
+           TYPOGRAPHY
+           ======================================== */
+        .section-label {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            color: var(--purple);
+            margin-bottom: 12px;
+        }
+
+        .section-title {
+            font-size: clamp(1.75rem, 4vw, 2.5rem);
+            font-weight: 900;
+            line-height: 1.2;
+            margin-bottom: 16px;
+            letter-spacing: -0.03em;
+        }
+
+        .section-desc {
+            font-size: 1rem;
+            color: var(--text-secondary);
+            max-width: 640px;
+            line-height: 1.8;
+        }
+
+        .gradient-text {
+            background: linear-gradient(135deg, var(--purple), var(--blue), var(--cyan));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        /* ========================================
+           GLASSMORPHISM CARD
+           ======================================== */
+        .glass-card {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: var(--radius-lg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+                        border-color 0.35s,
+                        box-shadow 0.35s;
+        }
+
+        .glass-card:hover {
+            transform: translateY(-4px);
+            border-color: rgba(124, 58, 237, 0.2);
+            box-shadow: 0 0 30px rgba(124, 58, 237, 0.08),
+                        0 20px 40px rgba(0, 0, 0, 0.08);
+        }
+
+        /* ========================================
+           SCROLL REVEAL
+           ======================================== */
+        .reveal {
+            opacity: 0;
+            transform: translateY(32px);
+            transition: opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1),
+                        transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        .reveal.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .reveal-delay-1 { transition-delay: 0.08s; }
+        .reveal-delay-2 { transition-delay: 0.16s; }
+        .reveal-delay-3 { transition-delay: 0.24s; }
+        .reveal-delay-4 { transition-delay: 0.32s; }
+        .reveal-delay-5 { transition-delay: 0.40s; }
+        .reveal-delay-6 { transition-delay: 0.48s; }
+
+        /* ========================================
+           HERO SECTION
+           ======================================== */
+        .hero {
+            padding: 120px 0 100px;
+            text-align: center;
+            position: relative;
+        }
+
+        .hero-badge {
+            display: inline-block;
+            font-family: var(--font-mono);
+            font-size: 0.72rem;
+            font-weight: 600;
+            padding: 6px 16px;
+            border-radius: 100px;
+            background: var(--purple-dim);
+            color: var(--purple);
+            border: 1px solid rgba(124, 58, 237, 0.2);
+            margin-bottom: 32px;
+            letter-spacing: 0.05em;
+        }
+
+        .hero-title {
+            font-size: clamp(2.5rem, 7vw, 4.5rem);
+            font-weight: 900;
+            line-height: 1.08;
+            letter-spacing: -0.04em;
+            margin-bottom: 20px;
+        }
+
+        .hero-subtitle {
+            font-size: clamp(1rem, 2.2vw, 1.3rem);
+            color: var(--text-secondary);
+            font-weight: 400;
+            margin-bottom: 24px;
+        }
+
+        .hero-desc {
+            font-size: 0.95rem;
+            color: var(--text-muted);
+            max-width: 600px;
+            margin: 0 auto 48px;
+            line-height: 1.8;
+        }
+
+        .hero-stats {
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 0;
+        }
+
+        .hero-stat {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: var(--radius-md);
+            font-size: 0.85rem;
+        }
+
+        .hero-stat-num {
+            font-family: var(--font-mono);
+            font-weight: 700;
+            font-size: 1.3rem;
+            background: linear-gradient(135deg, var(--purple), var(--cyan));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .hero-stat-label {
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+        }
+
+        /* Decorative line under hero */
+        .hero-divider {
+            width: 120px;
+            height: 2px;
+            margin: 56px auto 0;
+            background: linear-gradient(90deg, transparent, var(--purple), var(--cyan), transparent);
+            border-radius: 2px;
+        }
+
+        /* ========================================
+           SECTION 3: SYSTEM OVERVIEW - GRID
+           ======================================== */
+        .overview-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            margin-top: 48px;
+        }
+
+        .overview-card {
+            padding: 28px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .overview-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, var(--purple), var(--cyan));
+            opacity: 0;
+            transition: opacity 0.35s;
+        }
+
+        .overview-card:hover::before {
+            opacity: 1;
+        }
+
+        .overview-icon {
+            width: 44px;
+            height: 44px;
+            border-radius: var(--radius-md);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem;
+            margin-bottom: 16px;
+            font-weight: 700;
+            font-family: var(--font-mono);
+        }
+
+        .overview-icon.purple { background: var(--purple-dim); color: var(--purple); }
+        .overview-icon.blue { background: var(--blue-dim); color: var(--blue); }
+        .overview-icon.cyan { background: var(--cyan-dim); color: var(--cyan); }
+        .overview-icon.orange { background: var(--orange-dim); color: var(--orange); }
+        .overview-icon.pink { background: var(--pink-dim); color: var(--pink); }
+        .overview-icon.green { background: var(--green-dim); color: var(--green); }
+
+        .overview-card h3 {
+            font-size: 1.05rem;
+            font-weight: 700;
+            margin-bottom: 8px;
+            letter-spacing: -0.01em;
+        }
+
+        .overview-card p {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            line-height: 1.7;
+        }
+
+        /* ========================================
+           SECTION 4: ARCHITECTURE FLOWCHART
+           ======================================== */
+        .flow-container {
+            margin-top: 48px;
+            display: flex;
+            justify-content: center;
+        }
+
+        .flow-vertical {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            max-width: 700px;
+            width: 100%;
+            gap: 0;
+        }
+
+        /* START / END pill nodes */
+        .flow-pill {
+            padding: 10px 28px;
+            border-radius: 100px;
+            background: var(--glass-bg);
+            border: 1.5px solid rgba(34, 197, 94, 0.5);
+            font-family: var(--font-mono);
+            font-size: 0.82rem;
+            font-weight: 700;
+            color: var(--green);
+            text-align: center;
+            backdrop-filter: blur(8px);
+        }
+
+        .flow-pill.end-pill {
+            border-color: rgba(239, 68, 68, 0.5);
+            color: var(--red);
+        }
+
+        /* Vertical connector line between phases */
+        .flow-vline {
+            width: 2px;
+            height: 32px;
+            background: linear-gradient(180deg, var(--text-muted), rgba(138, 138, 158, 0.3));
+            position: relative;
+        }
+
+        .flow-vline::after {
+            content: '';
+            position: absolute;
+            bottom: -4px;
+            left: -3px;
+            width: 0;
+            height: 0;
+            border-left: 4px solid transparent;
+            border-right: 4px solid transparent;
+            border-top: 6px solid var(--text-muted);
+        }
+
+        /* Phase group box */
+        .flow-phase {
+            width: 100%;
+            border-radius: var(--radius-lg);
+            padding: 24px 28px;
+            position: relative;
+            backdrop-filter: blur(8px);
+            transition: box-shadow 0.35s;
+        }
+
+        .flow-phase:hover {
+            box-shadow: 0 0 30px rgba(168, 85, 247, 0.08);
+        }
+
+        .flow-phase-number {
+            position: absolute;
+            top: 24px;
+            left: -12px;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: var(--font-mono);
+            font-size: 0.65rem;
+            font-weight: 700;
+        }
+
+        .flow-phase-label {
+            font-family: var(--font-mono);
+            font-size: 0.68rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .flow-phase-label::before {
+            content: '';
+            width: 20px;
+            height: 1px;
+        }
+
+        /* Phase color variants */
+        .flow-phase.phase-analysis {
+            background: rgba(124, 58, 237, 0.04);
+            border: 1px solid rgba(124, 58, 237, 0.15);
+        }
+        .flow-phase.phase-analysis .flow-phase-label { color: var(--purple); }
+        .flow-phase.phase-analysis .flow-phase-label::before { background: var(--purple); }
+        .flow-phase.phase-analysis .flow-phase-number { background: var(--purple-dim); color: var(--purple); }
+
+        .flow-phase.phase-context {
+            background: rgba(37, 99, 235, 0.04);
+            border: 1px solid rgba(37, 99, 235, 0.15);
+        }
+        .flow-phase.phase-context .flow-phase-label { color: var(--blue); }
+        .flow-phase.phase-context .flow-phase-label::before { background: var(--blue); }
+        .flow-phase.phase-context .flow-phase-number { background: var(--blue-dim); color: var(--blue); }
+
+        .flow-phase.phase-agent {
+            background: rgba(8, 145, 178, 0.04);
+            border: 1px solid rgba(8, 145, 178, 0.15);
+        }
+        .flow-phase.phase-agent .flow-phase-label { color: var(--cyan); }
+        .flow-phase.phase-agent .flow-phase-label::before { background: var(--cyan); }
+        .flow-phase.phase-agent .flow-phase-number { background: var(--cyan-dim); color: var(--cyan); }
+
+        .flow-phase.phase-routing {
+            background: rgba(217, 119, 6, 0.04);
+            border: 1px solid rgba(217, 119, 6, 0.15);
+        }
+        .flow-phase.phase-routing .flow-phase-label { color: var(--orange); }
+        .flow-phase.phase-routing .flow-phase-label::before { background: var(--orange); }
+        .flow-phase.phase-routing .flow-phase-number { background: var(--orange-dim); color: var(--orange); }
+
+        /* Flow node inside phases */
+        .flow-node {
+            padding: 14px 20px;
+            border-radius: var(--radius-md);
+            background: var(--glass-bg);
+            border: 1.5px solid var(--glass-border);
+            backdrop-filter: blur(8px);
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+
+        .flow-node:hover {
+            transform: translateY(-2px);
+        }
+
+        .flow-node.purple-border { border-color: rgba(168, 85, 247, 0.5); }
+        .flow-node.purple-border:hover { box-shadow: 0 0 20px var(--purple-glow); }
+        .flow-node.blue-border { border-color: rgba(59, 130, 246, 0.5); }
+        .flow-node.blue-border:hover { box-shadow: 0 0 20px var(--blue-glow); }
+        .flow-node.cyan-border { border-color: rgba(6, 182, 212, 0.5); }
+        .flow-node.cyan-border:hover { box-shadow: 0 0 20px var(--cyan-glow); }
+        .flow-node.pink-border { border-color: rgba(236, 72, 153, 0.5); }
+        .flow-node.pink-border:hover { box-shadow: 0 0 20px var(--pink-glow); }
+        .flow-node.orange-border { border-color: rgba(245, 158, 11, 0.5); }
+        .flow-node.orange-border:hover { box-shadow: 0 0 20px var(--orange-glow); }
+
+        .flow-node-title {
+            font-family: var(--font-mono);
+            font-size: 0.82rem;
+            font-weight: 600;
+            margin-bottom: 4px;
+            letter-spacing: -0.01em;
+        }
+
+        .flow-node-desc {
+            font-size: 0.72rem;
+            color: var(--text-muted);
+            line-height: 1.6;
+        }
+
+        /* Routing 3-branch layout */
+        .flow-routing-branches {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 12px;
+            margin-top: 16px;
+        }
+
+        .flow-route-path {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            text-align: center;
+        }
+
+        .flow-route-tag {
+            font-family: var(--font-mono);
+            font-size: 0.68rem;
+            font-weight: 700;
+            padding: 4px 10px;
+            border-radius: var(--radius-sm);
+            white-space: nowrap;
+        }
+
+        .flow-route-tag.green-tag { background: var(--green-dim); color: var(--green); }
+        .flow-route-tag.blue-tag { background: var(--blue-dim); color: var(--blue); }
+        .flow-route-tag.orange-tag { background: var(--orange-dim); color: var(--orange); }
+
+        .flow-route-vline {
+            width: 1.5px;
+            height: 16px;
+            background: var(--text-muted);
+            position: relative;
+        }
+
+        .flow-route-vline::after {
+            content: '';
+            position: absolute;
+            bottom: -3px;
+            left: -2.5px;
+            width: 0;
+            height: 0;
+            border-left: 3.5px solid transparent;
+            border-right: 3.5px solid transparent;
+            border-top: 5px solid var(--text-muted);
+        }
+
+        .flow-route-steps {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .flow-route-step {
+            font-family: var(--font-mono);
+            font-size: 0.7rem;
+            font-weight: 500;
+            padding: 6px 12px;
+            border-radius: var(--radius-sm);
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            color: var(--text-secondary);
+            width: 100%;
+        }
+
+        .flow-route-micro-arrow {
+            font-size: 0.65rem;
+            color: var(--text-muted);
+            line-height: 1;
+        }
+
+        /* ReAct loop phase - dashed border to show cycle */
+        .react-loop-phase {
+            border-style: dashed !important;
+            border-width: 2px !important;
+            position: relative;
+        }
+
+        .react-loop-phase::after {
+            content: 'LOOP';
+            position: absolute;
+            top: -10px;
+            right: 20px;
+            font-family: var(--font-mono);
+            font-size: 0.6rem;
+            font-weight: 700;
+            color: var(--cyan);
+            background: var(--bg-root);
+            padding: 0 8px;
+            letter-spacing: 0.12em;
+        }
+
+        .react-branches {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 12px;
+            margin-top: 16px;
+        }
+
+        .react-branch {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            text-align: center;
+        }
+
+        .react-loop-arrow {
+            font-size: 1.6rem;
+            color: var(--cyan);
+            line-height: 1;
+            font-weight: 700;
+            animation: loopPulse 2s ease-in-out infinite;
+        }
+
+        @keyframes loopPulse {
+            0%, 100% { opacity: 0.5; transform: scale(1); }
+            50% { opacity: 1; transform: scale(1.15); }
+        }
+
+        .react-exit-label {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--green);
+            padding: 8px 14px;
+            border-radius: var(--radius-sm);
+            background: var(--green-dim);
+        }
+
+        @media (max-width: 640px) {
+            .react-branches,
+            .flow-routing-branches {
+                grid-template-columns: 1fr;
+                gap: 16px;
+            }
+            .flow-phase {
+                padding: 20px 16px;
+            }
+            .flow-phase-number {
+                position: static;
+                margin-bottom: 10px;
+            }
+        }
+
+        /* ========================================
+           SECTION 5: MESSAGE PROCESSING TIMELINE
+           ======================================== */
+        .timeline {
+            margin-top: 48px;
+            position: relative;
+            padding-left: 36px;
+        }
+
+        .timeline::before {
+            content: '';
+            position: absolute;
+            left: 14px;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: linear-gradient(180deg, var(--purple), var(--blue), var(--cyan), var(--purple));
+            border-radius: 2px;
+        }
+
+        .timeline-step {
+            position: relative;
+            padding: 0 0 40px 32px;
+        }
+
+        .timeline-step:last-child {
+            padding-bottom: 0;
+        }
+
+        .timeline-dot {
+            position: absolute;
+            left: -29px;
+            top: 4px;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            border: 2px solid var(--purple);
+            background: var(--bg-root);
+        }
+
+        .timeline-tag {
+            display: inline-block;
+            font-family: var(--font-mono);
+            font-size: 0.68rem;
+            font-weight: 700;
+            padding: 3px 10px;
+            border-radius: var(--radius-sm);
+            margin-bottom: 8px;
+            letter-spacing: 0.04em;
+        }
+
+        .timeline-tag.tag-ui { background: var(--cyan-dim); color: var(--cyan); }
+        .timeline-tag.tag-analyzer { background: var(--purple-dim); color: var(--purple); }
+        .timeline-tag.tag-context { background: var(--blue-dim); color: var(--blue); }
+        .timeline-tag.tag-agent { background: var(--cyan-dim); color: var(--cyan); }
+        .timeline-tag.tag-memory { background: var(--pink-dim); color: var(--pink); }
+
+        .timeline-step h4 {
+            font-family: var(--font-mono);
+            font-size: 0.88rem;
+            font-weight: 600;
+            margin-bottom: 6px;
+            color: var(--text-primary);
+        }
+
+        .timeline-step p {
+            font-size: 0.84rem;
+            color: var(--text-secondary);
+            line-height: 1.7;
+        }
+
+        /* ========================================
+           SECTION 6: MEMORY SYSTEM
+           ======================================== */
+        .memory-dual {
+            display: grid;
+            grid-template-columns: 1fr auto 1fr;
+            gap: 24px;
+            align-items: stretch;
+            margin-top: 48px;
+        }
+
+        .memory-box {
+            padding: 28px;
+        }
+
+        .memory-box.short-term {
+            border-color: rgba(8, 145, 178, 0.35);
+            box-shadow: 0 0 25px rgba(8, 145, 178, 0.06);
+        }
+
+        .memory-box.long-term {
+            border-color: rgba(124, 58, 237, 0.35);
+            box-shadow: 0 0 25px rgba(124, 58, 237, 0.06);
+        }
+
+        .memory-box h3 {
+            font-size: 1.05rem;
+            font-weight: 700;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .memory-box h3 .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        .memory-box h3 .dot.cyan { background: var(--cyan); box-shadow: 0 0 8px var(--cyan-glow); }
+        .memory-box h3 .dot.purple { background: var(--purple); box-shadow: 0 0 8px var(--purple-glow); }
+
+        .memory-list {
+            list-style: none;
+        }
+
+        .memory-list li {
+            font-size: 0.84rem;
+            color: var(--text-secondary);
+            padding: 6px 0;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+        }
+
+        .memory-list li:last-child {
+            border-bottom: none;
+        }
+
+        .memory-list li::before {
+            content: '';
+            flex-shrink: 0;
+            width: 4px;
+            height: 4px;
+            border-radius: 50%;
+            background: var(--text-muted);
+            margin-top: 9px;
+        }
+
+        .memory-arrow-col {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 0 12px;
+        }
+
+        .memory-arrow-col .arrow-text {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            text-align: center;
+            writing-mode: vertical-rl;
+            text-orientation: mixed;
+            font-family: var(--font-mono);
+            letter-spacing: 0.04em;
+        }
+
+        .memory-arrow-col svg {
+            color: var(--purple);
+        }
+
+        /* Memory Pipeline */
+        .memory-pipeline {
+            margin-top: 40px;
+        }
+
+        .pipeline-flow {
+            display: flex;
+            align-items: center;
+            gap: 0;
+            flex-wrap: wrap;
+            justify-content: center;
+            padding: 24px;
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: var(--radius-lg);
+        }
+
+        .pipeline-node {
+            padding: 10px 16px;
+            font-size: 0.76rem;
+            font-family: var(--font-mono);
+            border-radius: var(--radius-sm);
+            background: var(--bg-surface);
+            border: 1px solid var(--glass-border);
+            text-align: center;
+            white-space: nowrap;
+            color: var(--text-secondary);
+        }
+
+        .pipeline-arrow {
+            padding: 0 6px;
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            flex-shrink: 0;
+        }
+
+        .pipeline-decision {
+            padding: 8px 14px;
+            font-size: 0.72rem;
+            font-family: var(--font-mono);
+            border-radius: var(--radius-sm);
+            background: var(--orange-dim);
+            border: 1px solid rgba(245, 158, 11, 0.3);
+            color: var(--orange);
+        }
+
+        /* ========================================
+           SECTION 7: TOOL CALL SYSTEM
+           ======================================== */
+        .tool-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+            margin-top: 48px;
+        }
+
+        .tool-box {
+            padding: 28px;
+        }
+
+        .tool-box h3 {
+            font-size: 1rem;
+            font-weight: 700;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .tool-badge {
+            font-family: var(--font-mono);
+            font-size: 0.65rem;
+            font-weight: 700;
+            padding: 3px 8px;
+            border-radius: var(--radius-sm);
+            letter-spacing: 0.06em;
+        }
+
+        .tool-badge.safe { background: var(--green-dim); color: var(--green); }
+        .tool-badge.sensitive { background: var(--orange-dim); color: var(--orange); }
+
+        .tool-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .tool-chip {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            padding: 6px 12px;
+            border-radius: var(--radius-sm);
+            background: var(--bg-surface);
+            border: 1px solid var(--glass-border);
+            color: var(--text-secondary);
+            transition: border-color 0.25s, color 0.25s;
+        }
+
+        .tool-chip:hover {
+            color: var(--text-primary);
+        }
+
+        .tool-box.safe-box .tool-chip:hover { border-color: rgba(34, 197, 94, 0.4); }
+        .tool-box.sensitive-box .tool-chip:hover { border-color: rgba(245, 158, 11, 0.4); }
+
+        /* ========================================
+           SECTION 8: EMOTION & AFFINITY
+           ======================================== */
+
+        /* Character tab bar */
+        .char-tab-bar {
+            display: flex;
+            gap: 6px;
+            margin: 32px 0 20px;
+            padding: 4px;
+            background: rgba(0, 0, 0, 0.03);
+            border-radius: var(--radius-md);
+            border: 1px solid var(--glass-border);
+            width: fit-content;
+        }
+
+        .char-tab {
+            font-family: var(--font-mono);
+            font-size: 0.82rem;
+            font-weight: 600;
+            padding: 10px 24px;
+            border: none;
+            border-radius: var(--radius-sm);
+            background: transparent;
+            color: var(--text-muted);
+            cursor: pointer;
+            transition: all 0.25s ease;
+            letter-spacing: 0.02em;
+        }
+
+        .char-tab:hover {
+            color: var(--text-secondary);
+            background: rgba(0, 0, 0, 0.05);
+        }
+
+        .char-tab.active {
+            color: #fff;
+            background: linear-gradient(135deg, var(--purple), var(--blue));
+            box-shadow: 0 2px 8px rgba(124, 58, 237, 0.3);
+        }
+
+        /* Emotion grid */
+        .emotion-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 16px;
+            margin: 0 0 56px;
+        }
+
+        .emotion-card {
+            padding: 22px 14px 18px;
+            text-align: center;
+            background: #ffffff;
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            border-radius: var(--radius-md);
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+            transition: transform 0.25s ease, box-shadow 0.25s ease;
+        }
+
+        .emotion-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+        }
+
+        .sprite-wrap {
+            width: 88px;
+            height: 120px;
+            margin: 0 auto 10px;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: var(--radius-sm);
+        }
+
+        .emotion-img,
+        .sprite-anim {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            display: block;
+            image-rendering: auto;
+        }
+
+        .sprite-anim.wide-sprite {
+            transform: scale(2);
+            transform-origin: center 42%;
+        }
+
+        .emotion-name {
+            font-family: var(--font-mono);
+            font-size: 0.78rem;
+            font-weight: 600;
+            margin-bottom: 4px;
+            color: #2a2a3e;
+        }
+
+        .emotion-label {
+            font-size: 0.72rem;
+            color: #7a7a90;
+        }
+
+        /* Character Gallery */
+        .char-gallery {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+            margin: 32px 0 56px;
+        }
+
+        .char-gallery-card {
+            text-align: center;
+            padding: 28px 18px 22px;
+            background: #ffffff;
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            border-radius: var(--radius-lg);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .char-gallery-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.08);
+        }
+
+        .char-gallery-card .sprite-wrap {
+            width: 120px;
+            height: 160px;
+            margin: 0 auto 16px;
+        }
+
+        .char-gallery-card .sprite-anim {
+            max-width: 100%;
+            max-height: 100%;
+        }
+
+        .char-gallery-card .sprite-anim.wide-sprite {
+            transform: scale(2);
+            transform-origin: center 42%;
+        }
+
+        .char-gallery-name {
+            font-family: var(--font-mono);
+            font-size: 0.92rem;
+            font-weight: 700;
+            color: #2a2a3e;
+            letter-spacing: 0.03em;
+            text-transform: capitalize;
+        }
+
+        .char-gallery-sub {
+            font-size: 0.75rem;
+            color: #8a8a9e;
+            margin-top: 4px;
+        }
+
+        @media (max-width: 768px) {
+            .char-gallery {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 14px;
+            }
+            .char-tab-bar {
+                flex-wrap: wrap;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .char-gallery {
+                grid-template-columns: 1fr 1fr;
+                gap: 10px;
+            }
+            .char-gallery-card .sprite-anim {
+                width: 90px;
+                height: 110px;
+            }
+        }
+
+        /* Why-box: design rationale callouts */
+        .why-box {
+            margin: 24px 0;
+            padding: 20px 24px;
+            border-left: 3px solid var(--purple);
+            background: linear-gradient(135deg, rgba(124, 58, 237, 0.04), rgba(37, 99, 235, 0.02));
+            border-radius: 0 var(--radius-md) var(--radius-md) 0;
+            font-size: 0.84rem;
+            line-height: 1.8;
+            color: var(--text-secondary);
+        }
+        .why-box strong {
+            color: var(--text-primary);
+            font-weight: 600;
+        }
+        .why-box .why-title {
+            font-family: var(--font-mono);
+            font-size: 0.72rem;
+            font-weight: 700;
+            color: var(--purple);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            margin-bottom: 8px;
+        }
+        .why-box.blue-accent { border-left-color: var(--blue); }
+        .why-box.blue-accent .why-title { color: var(--blue); }
+        .why-box.cyan-accent { border-left-color: var(--cyan); }
+        .why-box.cyan-accent .why-title { color: var(--cyan); }
+        .why-box.orange-accent { border-left-color: var(--orange); }
+        .why-box.orange-accent .why-title { color: var(--orange); }
+        .why-box.pink-accent { border-left-color: var(--pink); }
+        .why-box.pink-accent .why-title { color: var(--pink); }
+        .why-box.green-accent { border-left-color: var(--green); }
+        .why-box.green-accent .why-title { color: var(--green); }
+
+        /* Affinity table */
+        .affinity-table-wrap {
+            overflow-x: auto;
+        }
+
+        .affinity-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.82rem;
+        }
+
+        .affinity-table thead th {
+            font-family: var(--font-mono);
+            font-size: 0.72rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-muted);
+            padding: 12px 16px;
+            text-align: left;
+            border-bottom: 1px solid var(--glass-border);
+        }
+
+        .affinity-table tbody tr {
+            border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+            transition: background 0.2s;
+        }
+
+        .affinity-table tbody tr:hover {
+            background: var(--glass-hover);
+        }
+
+        .affinity-table td {
+            padding: 14px 16px;
+            vertical-align: middle;
+        }
+
+        .affinity-range {
+            font-family: var(--font-mono);
+            font-weight: 700;
+            font-size: 0.85rem;
+            color: var(--text-primary);
+            white-space: nowrap;
+        }
+
+        .affinity-bar-wrap {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .affinity-bar {
+            flex: 1;
+            height: 6px;
+            background: rgba(0, 0, 0, 0.06);
+            border-radius: 3px;
+            overflow: hidden;
+            max-width: 100px;
+        }
+
+        .affinity-bar-fill {
+            height: 100%;
+            border-radius: 3px;
+            background: linear-gradient(90deg, var(--purple), var(--cyan));
+            transition: width 0.5s ease;
+        }
+
+        .affinity-style {
+            color: var(--text-secondary);
+            line-height: 1.5;
+        }
+
+        .affinity-example {
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            font-style: italic;
+        }
+
+        /* ========================================
+           SECTION 9: TECH STACK
+           ======================================== */
+        .tech-badges {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 36px;
+        }
+
+        .tech-badge {
+            font-family: var(--font-mono);
+            font-size: 0.78rem;
+            font-weight: 500;
+            padding: 8px 18px;
+            border-radius: 100px;
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            color: var(--text-secondary);
+            transition: border-color 0.3s, color 0.3s, box-shadow 0.3s, transform 0.3s;
+            cursor: default;
+        }
+
+        .tech-badge:hover {
+            color: var(--text-primary);
+            border-color: rgba(168, 85, 247, 0.35);
+            box-shadow: 0 0 16px rgba(168, 85, 247, 0.12);
+            transform: translateY(-2px);
+        }
+
+        /* ========================================
+           SECTION 10: QUICK START
+           ======================================== */
+        .steps {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            margin-top: 48px;
+        }
+
+        .step-card {
+            padding: 28px;
+            position: relative;
+        }
+
+        .step-num {
+            font-family: var(--font-mono);
+            font-size: 2rem;
+            font-weight: 900;
+            background: linear-gradient(135deg, var(--purple), var(--cyan));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 14px;
+            display: block;
+        }
+
+        .step-card h3 {
+            font-size: 0.95rem;
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+
+        .step-card p {
+            font-size: 0.82rem;
+            color: var(--text-secondary);
+            margin-bottom: 14px;
+            line-height: 1.6;
+        }
+
+        .code-block {
+            font-family: var(--font-mono);
+            font-size: 0.72rem;
+            background: #f5f5f8;
+            border: 1px solid var(--glass-border);
+            border-radius: var(--radius-sm);
+            padding: 12px 14px;
+            color: var(--cyan);
+            overflow-x: auto;
+            white-space: pre;
+            line-height: 1.6;
+        }
+
+        /* ========================================
+           SECTION 11: PROJECT STRUCTURE
+           ======================================== */
+        .structure-block {
+            max-width: 700px;
+            margin: 36px auto 0;
+            font-family: var(--font-mono);
+            font-size: 0.78rem;
+            line-height: 1.8;
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: var(--radius-lg);
+            padding: 28px 32px;
+            color: var(--text-secondary);
+            white-space: pre-wrap;
+            word-break: break-all;
+            overflow-x: hidden;
+        }
+
+        .structure-block .dir {
+            color: var(--blue);
+            font-weight: 600;
+        }
+
+        .structure-block .file {
+            color: var(--text-primary);
+        }
+
+        .structure-block .comment {
+            color: var(--text-muted);
+        }
+
+        /* ========================================
+           FOOTER
+           ======================================== */
+        .footer {
+            text-align: center;
+            padding: 48px 0;
+            border-top: 1px solid var(--glass-border);
+        }
+
+        .footer p {
+            font-size: 0.82rem;
+            color: var(--text-muted);
+        }
+
+        .footer .gradient-text {
+            font-weight: 600;
+        }
+
+        /* ========================================
+           RESPONSIVE
+           ======================================== */
+        @media (max-width: 900px) {
+            .overview-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .memory-dual {
+                grid-template-columns: 1fr;
+            }
+
+            .memory-arrow-col {
+                flex-direction: row;
+                writing-mode: horizontal-tb;
+                padding: 8px 0;
+            }
+
+            .memory-arrow-col .arrow-text {
+                writing-mode: horizontal-tb;
+            }
+
+            .tool-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .steps {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 640px) {
+            .header-nav {
+                display: none;
+                position: absolute;
+                top: var(--header-height);
+                left: 0;
+                right: 0;
+                flex-direction: column;
+                background: rgba(255, 255, 255, 0.95);
+                backdrop-filter: blur(20px);
+                border-bottom: 1px solid var(--glass-border);
+                padding: 12px;
+            }
+
+            .header-nav.open {
+                display: flex;
+            }
+
+            .header-hamburger {
+                display: flex;
+            }
+
+            .overview-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .hero-stats {
+                flex-direction: column;
+                align-items: center;
+            }
+
+            .hero-stat {
+                width: 100%;
+                max-width: 260px;
+                justify-content: center;
+            }
+
+            .emotion-grid {
+                grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+            }
+
+            .affinity-table {
+                font-size: 0.75rem;
+            }
+
+            .affinity-table td, .affinity-table th {
+                padding: 10px 10px;
+            }
+
+            section {
+                padding: 64px 0;
+            }
+        }
+
+        /* ========================================
+           SCROLLBAR
+           ======================================== */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: rgba(124, 58, 237, 0.2);
+            border-radius: 3px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(124, 58, 237, 0.35);
+        }
+
+        /* ========================================
+           SUBSECTION HEADING
+           ======================================== */
+        .subsection-title {
+            font-size: 1.15rem;
+            font-weight: 700;
+            margin-bottom: 6px;
+            margin-top: 48px;
+            letter-spacing: -0.01em;
+        }
+
+        .subsection-desc {
+            font-size: 0.88rem;
+            color: var(--text-muted);
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+
+<!-- Ambient Glow & Noise -->
+<div class="ambient"></div>
+<div class="noise"></div>
+
+<!-- ===========================
+     HEADER
+     =========================== -->
+<header class="header">
+    <div class="header-logo">ENE</div>
+    <nav class="header-nav" id="headerNav">
+        <a href="#overview">Overview</a>
+        <a href="#architecture">Architecture</a>
+        <a href="#memory">Memory</a>
+        <a href="#tools">Tools</a>
+        <a href="#persona">Persona</a>
+        <a href="#quickstart">Quick Start</a>
+    </nav>
+    <button class="header-hamburger" id="hamburger" aria-label="메뉴 열기">
+        <span></span>
+        <span></span>
+        <span></span>
+    </button>
+</header>
+
+<div class="page-content">
+
+    <!-- ===========================
+         HERO
+         =========================== -->
+    <section class="hero">
+        <div class="container">
+            <div class="reveal">
+                <span class="hero-badge">부스트캠프 AI Tech NLP-05</span>
+            </div>
+            <h1 class="hero-title reveal reveal-delay-1">
+                <span class="gradient-text">ENE</span><br>Architecture
+            </h1>
+            <p class="hero-subtitle reveal reveal-delay-2">LangGraph 기반 Multi-Server MCP AI 어시스턴트</p>
+            <p class="hero-desc reveal reveal-delay-3">
+                4개의 MCP 서버 통합, ChromaDB 기반 장기 기억, 감정 분석, 페르소나 관리를 지원하는 지능형 어시스턴트
+            </p>
+            <div class="hero-stats reveal reveal-delay-4">
+                <div class="hero-stat">
+                    <span class="hero-stat-num">4</span>
+                    <span class="hero-stat-label">LangGraph Nodes</span>
+                </div>
+                <div class="hero-stat">
+                    <span class="hero-stat-num">2</span>
+                    <span class="hero-stat-label">Memory Layers</span>
+                </div>
+                <div class="hero-stat">
+                    <span class="hero-stat-num">7</span>
+                    <span class="hero-stat-label">Emotion States</span>
+                </div>
+                <div class="hero-stat">
+                    <span class="hero-stat-num">10</span>
+                    <span class="hero-stat-label">Affinity Levels</span>
+                </div>
+            </div>
+            <div class="hero-divider reveal reveal-delay-5"></div>
+        </div>
+    </section>
+
+    <!-- ===========================
+         SECTION 3: SYSTEM OVERVIEW
+         =========================== -->
+    <section id="overview">
+        <div class="container">
+            <span class="section-label reveal">System Overview</span>
+            <h2 class="section-title reveal reveal-delay-1">시스템 구성 요소</h2>
+            <p class="section-desc reveal reveal-delay-2">ENE를 구성하는 6개의 핵심 컴포넌트</p>
+
+            <div class="overview-grid">
+                <!-- Card 1 -->
+                <div class="glass-card overview-card reveal reveal-delay-1">
+                    <div class="overview-icon purple">E</div>
+                    <h3>ENE Widget</h3>
+                    <p>데스크톱 캐릭터 UI. 감정 기반 애니메이션과 드래그 이동, 우클릭 메뉴 지원</p>
+                </div>
+                <!-- Card 2 -->
+                <div class="glass-card overview-card reveal reveal-delay-2">
+                    <div class="overview-icon blue">C</div>
+                    <h3>ChatWindow</h3>
+                    <p>대화 인터페이스. 메시지 송수신과 HITL(Human-in-the-Loop) 도구 승인 처리</p>
+                </div>
+                <!-- Card 3 -->
+                <div class="glass-card overview-card reveal reveal-delay-3">
+                    <div class="overview-icon cyan">L</div>
+                    <h3>LangGraph</h3>
+                    <p>에이전트 오케스트레이션. Context &rarr; Agent &rarr; Memory 노드 체인 관리</p>
+                </div>
+                <!-- Card 4 -->
+                <div class="glass-card overview-card reveal reveal-delay-4">
+                    <div class="overview-icon pink">M</div>
+                    <h3>Memory System</h3>
+                    <p>단기(SQLite) + 장기(ChromaDB) 이중 메모리. 슬라이딩 윈도우와 자동 요약</p>
+                </div>
+                <!-- Card 5 -->
+                <div class="glass-card overview-card reveal reveal-delay-5">
+                    <div class="overview-icon orange">T</div>
+                    <h3>MCP Tools</h3>
+                    <p>외부 도구 통합. Slack, Discord, Calendar, Naver Search 등 MCP 서버 연동</p>
+                </div>
+                <!-- Card 6 -->
+                <div class="glass-card overview-card reveal reveal-delay-6">
+                    <div class="overview-icon green">P</div>
+                    <h3>Persona Logic</h3>
+                    <p>동적 페르소나. 호감도와 시간 경과에 따라 말투와 태도가 자연스럽게 변화</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ===========================
+         SECTION 4: LANGGRAPH NODE FLOW
+         =========================== -->
+    <section id="architecture">
+        <div class="container">
+            <span class="section-label reveal">Architecture</span>
+            <h2 class="section-title reveal reveal-delay-1">LangGraph Node Flow</h2>
+            <p class="section-desc reveal reveal-delay-2">ReAct 패턴 기반의 에이전트 실행 흐름</p>
+
+            <div class="why-box cyan-accent reveal reveal-delay-2">
+                <div class="why-title">Why ReAct Loop?</div>
+                일반 챗봇은 "질문 &rarr; 답변" 단방향이지만, ENE는 <strong>스스로 판단해서 도구를 호출하고, 결과를 보고 다시 생각</strong>합니다.
+                "오늘 날씨 알려줘"라고 하면 Agent가 검색 도구를 호출하고, 결과를 받아서 자연어로 재구성합니다.
+                이 <strong>Reasoning &rarr; Action &rarr; Observation 루프</strong>가 단순 응답이 아닌 실질적인 작업 수행을 가능하게 합니다.
+            </div>
+
+            <div class="flow-container reveal reveal-delay-3">
+                <div class="flow-vertical">
+
+                    <!-- START pill -->
+                    <div class="flow-pill">START</div>
+                    <div class="flow-vline"></div>
+
+                    <!-- PHASE 1: Analysis -->
+                    <div class="flow-phase phase-analysis">
+                        <span class="flow-phase-number">1</span>
+                        <div class="flow-phase-label">Analysis Phase</div>
+                        <div class="flow-node purple-border">
+                            <div class="flow-node-title" style="color: var(--purple);">AnalyzerNode</div>
+                            <div class="flow-node-desc">mood 7가지 감정 분석, intimacy 변화량 산출, 닉네임/관계 감지 (HCX-007)</div>
+                        </div>
+                    </div>
+                    <div class="flow-vline"></div>
+
+                    <!-- PHASE 2: Context -->
+                    <div class="flow-phase phase-context">
+                        <span class="flow-phase-number">2</span>
+                        <div class="flow-phase-label">Context Phase</div>
+                        <div class="flow-node blue-border">
+                            <div class="flow-node-title" style="color: var(--blue);">ContextBuilderNode</div>
+                            <div class="flow-node-desc">ChromaDB 유사도 검색, PersonaManager 프롬프트, System Prompt 조립 (No LLM call)</div>
+                        </div>
+                    </div>
+                    <div class="flow-vline"></div>
+
+                    <!-- PHASE 3: ReAct Loop (Agent + Tools) -->
+                    <div class="flow-phase phase-agent react-loop-phase">
+                        <span class="flow-phase-number">3</span>
+                        <div class="flow-phase-label">ReAct Loop</div>
+
+                        <!-- Agent node -->
+                        <div class="flow-node cyan-border react-agent-node" id="reactAgent">
+                            <div class="flow-node-title" style="color: var(--cyan);">AgentNode</div>
+                            <div class="flow-node-desc">ChatClovaX (HCX-005) 호출, MCP tool binding, 응답 생성</div>
+                        </div>
+
+                        <div class="flow-vline" style="height:20px;"></div>
+
+                        <!-- Router -->
+                        <div class="flow-node orange-border" style="text-align:center;">
+                            <div class="flow-node-title" style="color: var(--orange);">route_after_agent()</div>
+                            <div class="flow-node-desc">tool_calls 유무 및 안전 등급에 따라 분기</div>
+                        </div>
+
+                        <!-- 3 branches inside loop -->
+                        <div class="react-branches">
+                            <!-- Branch: Safe tools (loops back) -->
+                            <div class="react-branch">
+                                <span class="flow-route-tag blue-tag">Safe tools</span>
+                                <div class="flow-route-vline"></div>
+                                <div class="flow-route-step" style="color: var(--green); border-color: rgba(34,197,94,0.35);">ToolNode</div>
+                                <div class="react-loop-arrow" title="Back to AgentNode">&#x21BA;</div>
+                            </div>
+
+                            <!-- Branch: No tools (exits loop) -->
+                            <div class="react-branch react-branch-exit">
+                                <span class="flow-route-tag green-tag">No tool_calls</span>
+                                <div class="flow-route-vline"></div>
+                                <div class="react-exit-label">Exit Loop &#x2193;</div>
+                            </div>
+
+                            <!-- Branch: Sensitive tools (loops back) -->
+                            <div class="react-branch">
+                                <span class="flow-route-tag orange-tag">Sensitive tools</span>
+                                <div class="flow-route-vline"></div>
+                                <div class="flow-route-step" style="color: var(--orange); border-color: rgba(245,158,11,0.35);">HITL Review</div>
+                                <span class="flow-route-micro-arrow">&#9660;</span>
+                                <div class="flow-route-step" style="color: var(--green); border-color: rgba(34,197,94,0.35);">ToolNode</div>
+                                <div class="react-loop-arrow" title="Back to AgentNode">&#x21BA;</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flow-vline"></div>
+
+                    <!-- PHASE 4: Memory & End -->
+                    <div class="flow-phase phase-routing">
+                        <span class="flow-phase-number">4</span>
+                        <div class="flow-phase-label">Finalize Phase</div>
+                        <div class="flow-node pink-border">
+                            <div class="flow-node-title" style="color: var(--pink);">MemoryManagerNode</div>
+                            <div class="flow-node-desc">슬라이딩 윈도우 트리밍, 요약 아카이브, 도구 메시지 정리</div>
+                        </div>
+                    </div>
+                    <div class="flow-vline"></div>
+
+                    <!-- END pill -->
+                    <div class="flow-pill end-pill">END</div>
+
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ===========================
+         SECTION 5: MESSAGE PROCESSING FLOW
+         =========================== -->
+    <section id="processing">
+        <div class="container">
+            <span class="section-label reveal">Message Processing</span>
+            <h2 class="section-title reveal reveal-delay-1">메시지 처리 흐름</h2>
+            <p class="section-desc reveal reveal-delay-2">사용자 입력부터 응답까지 6단계 파이프라인</p>
+
+            <div class="why-box blue-accent reveal reveal-delay-2">
+                <div class="why-title">Why This Pipeline?</div>
+                단순히 LLM에 메시지를 던지면 <strong>맥락 없는 일회성 답변</strong>만 나옵니다.
+                ENE는 메시지가 들어오면 먼저 <strong>감정을 분석</strong>하고, <strong>과거 기억을 검색</strong>하고,
+                <strong>페르소나를 조립</strong>한 뒤에야 Agent가 응답합니다.
+                이 전처리 파이프라인 덕분에 "어제 추천해준 맛집 어땠어?"라는 질문에도 맥락에 맞는 답변이 가능합니다.
+            </div>
+
+            <div class="timeline">
+                <!-- Step 1 -->
+                <div class="timeline-step reveal">
+                    <div class="timeline-dot" style="border-color: var(--cyan);"></div>
+                    <span class="timeline-tag tag-ui">UI</span>
+                    <h4>ChatWindow.send_message()</h4>
+                    <p>사용자 메시지를 UI에 표시, ENE "busy" 애니메이션 전환</p>
+                </div>
+                <!-- Step 2 -->
+                <div class="timeline-step reveal reveal-delay-1">
+                    <div class="timeline-dot" style="border-color: var(--purple);"></div>
+                    <span class="timeline-tag tag-analyzer">ANALYZER</span>
+                    <h4>감정/호감도 분석</h4>
+                    <p>HCX-007 LLM으로 mood, intimacy_change, reason 분석</p>
+                </div>
+                <!-- Step 3 -->
+                <div class="timeline-step reveal reveal-delay-2">
+                    <div class="timeline-dot" style="border-color: var(--blue);"></div>
+                    <span class="timeline-tag tag-context">CONTEXT</span>
+                    <h4>기억 검색 &amp; 프롬프트 조립</h4>
+                    <p>ChromaDB에서 유사도 &gt; 0.7 관련 기억 검색, PersonaManager로 말투 결정</p>
+                </div>
+                <!-- Step 4 -->
+                <div class="timeline-step reveal reveal-delay-3">
+                    <div class="timeline-dot" style="border-color: var(--cyan);"></div>
+                    <span class="timeline-tag tag-agent">AGENT</span>
+                    <h4>LLM 호출 &amp; 도구 결정</h4>
+                    <p>ChatClovaX(HCX-007) 호출, MCP 도구 바인딩, 필요시 tool_calls 생성</p>
+                </div>
+                <!-- Step 5 -->
+                <div class="timeline-step reveal reveal-delay-4">
+                    <div class="timeline-dot" style="border-color: var(--pink);"></div>
+                    <span class="timeline-tag tag-memory">MEMORY</span>
+                    <h4>메모리 관리</h4>
+                    <p>토큰 추정, 8192 초과시 슬라이딩 윈도우, 요약 후 ChromaDB 아카이브</p>
+                </div>
+                <!-- Step 6 -->
+                <div class="timeline-step reveal reveal-delay-5">
+                    <div class="timeline-dot" style="border-color: var(--cyan);"></div>
+                    <span class="timeline-tag tag-ui">UI</span>
+                    <h4>on_response_finished()</h4>
+                    <p>JSON 파싱, UI 업데이트, 호감도/감정 SQLite 저장, ENE 애니메이션 전환</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ===========================
+         SECTION 6: MEMORY SYSTEM
+         =========================== -->
+    <section id="memory">
+        <div class="container">
+            <span class="section-label reveal">Memory</span>
+            <h2 class="section-title reveal reveal-delay-1">이중 메모리 시스템</h2>
+            <p class="section-desc reveal reveal-delay-2">단기 메모리와 장기 메모리의 자동 전환 아키텍처</p>
+
+            <div class="why-box pink-accent reveal reveal-delay-2">
+                <div class="why-title">Why Dual Memory?</div>
+                LLM의 Context Window는 유한합니다. 대화가 길어지면 오래된 기억이 사라지고, <strong>페르소나의 연속성이 끊어집니다.</strong>
+                이중 메모리는 이 문제를 해결합니다. <strong>단기 메모리(SQLite)</strong>가 현재 대화의 흐름과 호감도/감정 상태를 실시간 유지하고,
+                토큰이 초과되면 Clova Summary API가 자동으로 요약해서 <strong>장기 메모리(ChromaDB)</strong>에 아카이브합니다.
+                다음 대화에서 ContextBuilder가 벡터 유사도 검색으로 관련 기억을 꺼내오기 때문에, <strong>"지난주에 한 이야기도 기억하는" 페르소나</strong>가 가능합니다.
+            </div>
+
+            <div class="memory-dual reveal reveal-delay-3">
+                <!-- Short-term -->
+                <div class="glass-card memory-box short-term">
+                    <h3><span class="dot cyan"></span> Short-term Memory</h3>
+                    <ul class="memory-list">
+                        <li><strong>저장소:</strong>&nbsp; SQLite (AsyncSqliteSaver)</li>
+                        <li>현재 대화 히스토리</li>
+                        <li>도구 호출 기록</li>
+                        <li>상태 정보 (호감도, 감정 등)</li>
+                        <li><strong>수명:</strong>&nbsp; Context Window 내</li>
+                        <li><strong>관리:</strong>&nbsp; MemoryManager 노드</li>
+                    </ul>
+                </div>
+
+                <!-- Arrow -->
+                <div class="memory-arrow-col">
+                    <span class="arrow-text">토큰 초과 시 자동 전환</span>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M5 12h14m0 0l-4-4m4 4l-4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </div>
+
+                <!-- Long-term -->
+                <div class="glass-card memory-box long-term">
+                    <h3><span class="dot purple"></span> Long-term Memory</h3>
+                    <ul class="memory-list">
+                        <li><strong>저장소:</strong>&nbsp; ChromaDB (Vector DB)</li>
+                        <li>과거 대화 요약본</li>
+                        <li>사용자 프로필 정보</li>
+                        <li>중요 기억들</li>
+                        <li><strong>수명:</strong>&nbsp; 영구 보존</li>
+                        <li><strong>검색:</strong>&nbsp; ContextBuilder 노드</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Memory Pipeline -->
+            <div class="memory-pipeline reveal reveal-delay-4">
+                <h3 class="subsection-title">Memory Pipeline</h3>
+                <p class="subsection-desc">토큰 초과 시 자동 요약 및 아카이브 흐름</p>
+                <div class="pipeline-flow">
+                    <div class="pipeline-node">현재 메시지들</div>
+                    <span class="pipeline-arrow">&rarr;</span>
+                    <div class="pipeline-decision">토큰 &gt; 8192?</div>
+                    <span class="pipeline-arrow">&rarr; Yes &rarr;</span>
+                    <div class="pipeline-node">슬라이딩 윈도우<br><small style="color:var(--text-muted);">(Clova API)</small></div>
+                    <span class="pipeline-arrow">&rarr;</span>
+                    <div class="pipeline-node">요약 생성<br><small style="color:var(--text-muted);">(Clova Summary)</small></div>
+                    <span class="pipeline-arrow">&rarr;</span>
+                    <div class="pipeline-node" style="border-color: rgba(168,85,247,0.3);">아카이브 + 메타데이터<br><small style="color:var(--purple);">ChromaDB</small></div>
+                </div>
+                <div style="text-align:center; margin-top:10px; font-size:0.72rem; color:var(--text-muted); font-family:var(--font-mono);">
+                    No &rarr; 현재 메시지들 유지 (loop)
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ===========================
+         SECTION 7: TOOL CALL SYSTEM
+         =========================== -->
+    <section id="tools">
+        <div class="container">
+            <span class="section-label reveal">Tools</span>
+            <h2 class="section-title reveal reveal-delay-1">Tool Call System</h2>
+            <p class="section-desc reveal reveal-delay-2">안전 등급에 따른 도구 실행 분류</p>
+
+            <div class="why-box orange-accent reveal reveal-delay-2">
+                <div class="why-title">Why Safe / Sensitive 분리?</div>
+                검색은 실수해도 괜찮지만, <strong>메시지 전송은 되돌릴 수 없습니다.</strong>
+                Safe 도구(검색, 조회)는 자동 실행해서 응답 속도를 높이고,
+                Sensitive 도구(메시지 전송, 캘린더 수정)는 <strong>HITL(Human-in-the-Loop) 승인</strong>을 거칩니다.
+                ENE가 "슬랙에 메시지 보낼까요?"라고 물어보고, 사용자가 확인해야만 실행됩니다.
+            </div>
+
+            <div class="tool-grid">
+                <!-- Safe -->
+                <div class="glass-card tool-box safe-box reveal reveal-delay-3">
+                    <h3>Safe Tools <span class="tool-badge safe">AUTO-EXECUTE</span></h3>
+                    <div class="tool-list">
+                        <span class="tool-chip">web_search</span>
+                        <span class="tool-chip">naver_blog_search</span>
+                        <span class="tool-chip">naver_shopping_search</span>
+                        <span class="tool-chip">naver_place_search</span>
+                        <span class="tool-chip">discord_read</span>
+                    </div>
+                </div>
+                <!-- Sensitive -->
+                <div class="glass-card tool-box sensitive-box reveal reveal-delay-4">
+                    <h3>Sensitive Tools <span class="tool-badge sensitive">HITL REQUIRED</span></h3>
+                    <div class="tool-list">
+                        <span class="tool-chip">send_message</span>
+                        <span class="tool-chip">read_messages</span>
+                        <span class="tool-chip">conversations_add_message</span>
+                        <span class="tool-chip">channels_list</span>
+                        <span class="tool-chip">add_reaction</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ===========================
+         SECTION 8: EMOTION & AFFINITY
+         =========================== -->
+    <section id="persona">
+        <div class="container">
+            <span class="section-label reveal">Persona</span>
+            <h2 class="section-title reveal reveal-delay-1">감정 &amp; 호감도 시스템</h2>
+            <p class="section-desc reveal reveal-delay-2">7가지 감정 상태와 10단계 호감도 기반 페르소나 관리</p>
+
+            <div class="why-box reveal reveal-delay-2">
+                <div class="why-title">Why Dynamic Persona?</div>
+                처음 만난 사람에게 반말하면 어색하듯, AI도 <strong>관계의 깊이에 맞는 말투</strong>가 필요합니다.
+                ENE는 매 대화마다 <strong>AnalyzerNode</strong>가 사용자의 감정과 호감도 변화를 분석합니다.
+                호감도 0~9에서는 "무엇을 도와드릴까요?"라고 하지만, 90 이상이 되면 "뭐야 왜 안 와~ 보고 싶었단 말이야!"로 변합니다.
+                <strong>시간 경과</strong>도 반영됩니다. 만난 지 1일차의 탐색적 태도와 365일차의 깊은 신뢰는 같을 수 없기 때문입니다.
+                이 두 축(호감도 10단계 + 시간 10단계)이 조합되어 <strong>100가지 이상의 페르소나 변화</strong>를 만들어냅니다.
+            </div>
+
+            <!-- Character Gallery: All 4 Characters -->
+            <h3 class="subsection-title reveal reveal-delay-3">4 Characters</h3>
+
+            <div class="char-gallery reveal reveal-delay-4">
+                <div class="char-gallery-card">
+                    <div class="sprite-wrap"><img class="sprite-anim" data-character="cirno" data-emotion="basic" src="MCP_agent/agent/assets/cirno/basic/frame_000.png" alt="cirno"></div>
+                    <div class="char-gallery-name">Cirno</div>
+                    <div class="char-gallery-sub">ice fairy</div>
+                </div>
+                <div class="char-gallery-card">
+                    <div class="sprite-wrap"><img class="sprite-anim" data-character="aya" data-emotion="basic" src="MCP_agent/agent/assets/aya/basic/frame_000.png" alt="aya"></div>
+                    <div class="char-gallery-name">Aya</div>
+                    <div class="char-gallery-sub">default character</div>
+                </div>
+                <div class="char-gallery-card">
+                    <div class="sprite-wrap"><img class="sprite-anim" data-character="koishi" data-emotion="basic" src="MCP_agent/agent/assets/koishi/basic/frame_000.png" alt="koishi"></div>
+                    <div class="char-gallery-name">Koishi</div>
+                    <div class="char-gallery-sub">subconscious</div>
+                </div>
+                <div class="char-gallery-card">
+                    <div class="sprite-wrap"><img class="sprite-anim" data-character="marisa" data-emotion="basic" src="MCP_agent/agent/assets/marisa/basic/frame_000.png" alt="marisa"></div>
+                    <div class="char-gallery-name">Marisa</div>
+                    <div class="char-gallery-sub">ordinary magician</div>
+                </div>
+            </div>
+
+            <!-- Emotions with Character Tabs -->
+            <h3 class="subsection-title reveal">7 Emotion States</h3>
+
+            <div class="char-tab-bar reveal" id="charTabBar">
+                <button class="char-tab active" data-char="cirno">Cirno</button>
+                <button class="char-tab" data-char="aya">Aya</button>
+                <button class="char-tab" data-char="koishi">Koishi</button>
+                <button class="char-tab" data-char="marisa">Marisa</button>
+            </div>
+
+            <div class="emotion-grid reveal" id="emotionGrid">
+                <div class="emotion-card">
+                    <div class="sprite-wrap"><img class="sprite-anim" data-character="cirno" data-emotion="basic" src="MCP_agent/agent/assets/cirno/basic/frame_000.png" alt="basic"></div>
+                    <div class="emotion-name">basic</div>
+                    <div class="emotion-label">기본</div>
+                </div>
+                <div class="emotion-card">
+                    <div class="sprite-wrap"><img class="sprite-anim" data-character="cirno" data-emotion="happy" src="MCP_agent/agent/assets/cirno/happy/frame_000.png" alt="happy"></div>
+                    <div class="emotion-name">happy</div>
+                    <div class="emotion-label">호감도 +</div>
+                </div>
+                <div class="emotion-card">
+                    <div class="sprite-wrap"><img class="sprite-anim" data-character="cirno" data-emotion="love" src="MCP_agent/agent/assets/cirno/love/frame_000.png" alt="love"></div>
+                    <div class="emotion-name">love</div>
+                    <div class="emotion-label">호감도 최고</div>
+                </div>
+                <div class="emotion-card">
+                    <div class="sprite-wrap"><img class="sprite-anim" data-character="cirno" data-emotion="sad" src="MCP_agent/agent/assets/cirno/sad/frame_000.png" alt="sad"></div>
+                    <div class="emotion-name">sad</div>
+                    <div class="emotion-label">호감도 -</div>
+                </div>
+                <div class="emotion-card">
+                    <div class="sprite-wrap"><img class="sprite-anim" data-character="cirno" data-emotion="angry" src="MCP_agent/agent/assets/cirno/angry/frame_000.png" alt="angry"></div>
+                    <div class="emotion-name">angry</div>
+                    <div class="emotion-label">호감도 --</div>
+                </div>
+                <div class="emotion-card">
+                    <div class="sprite-wrap"><img class="sprite-anim" data-character="cirno" data-emotion="pouting" src="MCP_agent/agent/assets/cirno/pouting/frame_000.png" alt="pouting"></div>
+                    <div class="emotion-name">pouting</div>
+                    <div class="emotion-label">삐침</div>
+                </div>
+                <div class="emotion-card">
+                    <div class="sprite-wrap"><img class="sprite-anim" data-character="cirno" data-emotion="busy" src="MCP_agent/agent/assets/cirno/busy/frame_000.png" alt="busy"></div>
+                    <div class="emotion-name">busy</div>
+                    <div class="emotion-label">도구 실행 중</div>
+                </div>
+            </div>
+
+            <!-- Affinity -->
+            <h3 class="subsection-title reveal">10 Affinity Levels</h3>
+            <p class="subsection-desc reveal">호감도에 따라 말투와 태도가 자연스럽게 변화합니다</p>
+
+            <div class="why-box green-accent reveal">
+                <div class="why-title">How It Works</div>
+                사용자가 메시지를 보내면 <strong>AnalyzerNode</strong>가 감정(7가지)과 호감도 변화량(-5 ~ +5)을 실시간 분석합니다.
+                이 결과가 <strong>PersonaManager</strong>에 전달되면, 현재 호감도(0~100)와 만남 일수를 조합해
+                <strong>tone_steps[10] &times; time_steps[10]</strong> 매트릭스에서 적절한 말투 가이드라인을 생성합니다.
+                이 가이드라인이 System Prompt에 주입되어 Agent의 응답 스타일을 결정합니다.
+                호감도는 SQLite에 영구 저장되므로, <strong>세션을 닫았다 열어도 관계가 이어집니다.</strong>
+            </div>
+
+            <div class="affinity-table-wrap reveal reveal-delay-1">
+                <table class="affinity-table">
+                    <thead>
+                        <tr>
+                            <th>호감도</th>
+                            <th></th>
+                            <th>말투 스타일</th>
+                            <th>예시</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td class="affinity-range">0 &ndash; 9</td>
+                            <td><div class="affinity-bar-wrap"><div class="affinity-bar"><div class="affinity-bar-fill" style="width: 9%;"></div></div></div></td>
+                            <td class="affinity-style">극도로 격식을 차린 비즈니스 말투 (하십시오체)</td>
+                            <td class="affinity-example">"무엇을 도와드릴까요?"</td>
+                        </tr>
+                        <tr>
+                            <td class="affinity-range">10 &ndash; 19</td>
+                            <td><div class="affinity-bar-wrap"><div class="affinity-bar"><div class="affinity-bar-fill" style="width: 19%;"></div></div></div></td>
+                            <td class="affinity-style">정중한 존댓말, 감정 표현 자제</td>
+                            <td class="affinity-example">"알겠습니다, 확인해 드리겠습니다."</td>
+                        </tr>
+                        <tr>
+                            <td class="affinity-range">20 &ndash; 29</td>
+                            <td><div class="affinity-bar-wrap"><div class="affinity-bar"><div class="affinity-bar-fill" style="width: 29%;"></div></div></div></td>
+                            <td class="affinity-style">조심스러운 존댓말, '~님' 호칭</td>
+                            <td class="affinity-example">"네, 사용자님. 처리해 드릴게요."</td>
+                        </tr>
+                        <tr>
+                            <td class="affinity-range">30 &ndash; 39</td>
+                            <td><div class="affinity-bar-wrap"><div class="affinity-bar"><div class="affinity-bar-fill" style="width: 39%;"></div></div></div></td>
+                            <td class="affinity-style">약간의 온기가 섞인 존댓말</td>
+                            <td class="affinity-example">"그렇군요! 제가 찾아볼게요."</td>
+                        </tr>
+                        <tr>
+                            <td class="affinity-range">40 &ndash; 49</td>
+                            <td><div class="affinity-bar-wrap"><div class="affinity-bar"><div class="affinity-bar-fill" style="width: 49%;"></div></div></div></td>
+                            <td class="affinity-style">표준적인 해요체, 친한 동료 느낌</td>
+                            <td class="affinity-example">"오~ 재밌겠네요!"</td>
+                        </tr>
+                        <tr>
+                            <td class="affinity-range">50 &ndash; 59</td>
+                            <td><div class="affinity-bar-wrap"><div class="affinity-bar"><div class="affinity-bar-fill" style="width: 59%;"></div></div></div></td>
+                            <td class="affinity-style">친근한 해요체, 응답이 길어짐</td>
+                            <td class="affinity-example">"헉 진짜요? 대박이다~"</td>
+                        </tr>
+                        <tr>
+                            <td class="affinity-range">60 &ndash; 69</td>
+                            <td><div class="affinity-bar-wrap"><div class="affinity-bar"><div class="affinity-bar-fill" style="width: 69%;"></div></div></div></td>
+                            <td class="affinity-style">매우 편안한 해요체</td>
+                            <td class="affinity-example">"아 그거 나도 알아~ 진짜 좋더라고요!"</td>
+                        </tr>
+                        <tr>
+                            <td class="affinity-range">70 &ndash; 79</td>
+                            <td><div class="affinity-bar-wrap"><div class="affinity-bar"><div class="affinity-bar-fill" style="width: 79%;"></div></div></div></td>
+                            <td class="affinity-style">반말과 존댓말 혼용 (반존대)</td>
+                            <td class="affinity-example">"오빠 그거 알아? 진짜 웃겨요 ㅋㅋ"</td>
+                        </tr>
+                        <tr>
+                            <td class="affinity-range">80 &ndash; 89</td>
+                            <td><div class="affinity-bar-wrap"><div class="affinity-bar"><div class="affinity-bar-fill" style="width: 89%;"></div></div></div></td>
+                            <td class="affinity-style">친구 같은 다정한 반말</td>
+                            <td class="affinity-example">"야 뭐해~ 심심한데 놀아줘!"</td>
+                        </tr>
+                        <tr>
+                            <td class="affinity-range">90 &ndash; 100</td>
+                            <td><div class="affinity-bar-wrap"><div class="affinity-bar"><div class="affinity-bar-fill" style="width: 100%;"></div></div></div></td>
+                            <td class="affinity-style">소꿉친구 같은 완전한 반말</td>
+                            <td class="affinity-example">"뭐야 왜 안 와~ 보고 싶었단 말이야!"</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <!-- ===========================
+         SECTION 9: TECH STACK
+         =========================== -->
+    <section id="techstack">
+        <div class="container">
+            <span class="section-label reveal">Tech Stack</span>
+            <h2 class="section-title reveal reveal-delay-1">기술 스택</h2>
+
+            <div class="tech-badges reveal reveal-delay-2">
+                <span class="tech-badge">CLOVA X (HyperCLOVA)</span>
+                <span class="tech-badge">OpenAI GPT-4o</span>
+                <span class="tech-badge">LangGraph</span>
+                <span class="tech-badge">LangChain</span>
+                <span class="tech-badge">FastMCP</span>
+                <span class="tech-badge">PySide6 (Qt)</span>
+                <span class="tech-badge">ChromaDB</span>
+                <span class="tech-badge">SQLite</span>
+                <span class="tech-badge">FastAPI</span>
+                <span class="tech-badge">uvicorn</span>
+                <span class="tech-badge">MCP (Model Context Protocol)</span>
+                <span class="tech-badge">SSE (Server-Sent Events)</span>
+                <span class="tech-badge">ngrok</span>
+                <span class="tech-badge">Node.js</span>
+            </div>
+        </div>
+    </section>
+
+    <!-- ===========================
+         SECTION 10: QUICK START
+         =========================== -->
+    <section id="quickstart">
+        <div class="container">
+            <span class="section-label reveal">Quick Start</span>
+            <h2 class="section-title reveal reveal-delay-1">빠른 시작</h2>
+            <p class="section-desc reveal reveal-delay-2">3단계로 ENE를 실행하세요</p>
+
+            <div class="steps">
+                <div class="glass-card step-card reveal reveal-delay-1">
+                    <span class="step-num">01</span>
+                    <h3>저장소 클론 및 의존성 설치</h3>
+                    <p>프로젝트를 로컬에 복제하고 필요한 패키지를 설치합니다.</p>
+                    <div class="code-block">git clone [repository-url]
+cd MCP_agent
+uv sync</div>
+                </div>
+
+                <div class="glass-card step-card reveal reveal-delay-2">
+                    <span class="step-num">02</span>
+                    <h3>환경 변수 설정</h3>
+                    <p>API 키와 서비스 인증 정보를 구성합니다.</p>
+                    <div class="code-block">cp .env.example .env
+# CLOVA API Key
+# Discord Bot Token
+# Slack Bot Token
+# Google OAuth</div>
+                </div>
+
+                <div class="glass-card step-card reveal reveal-delay-3">
+                    <span class="step-num">03</span>
+                    <h3>MCP 서버 시작 &amp; GUI 실행</h3>
+                    <p>MCP 서버를 구동한 뒤 GUI 애플리케이션을 실행합니다.</p>
+                    <div class="code-block">bash MCP_agent/Fast-MCP/\
+  scripts/start-slack-mcp.sh
+
+python MCP_agent/agent/\
+  clova_mcp_gui.py</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ===========================
+         SECTION 11: PROJECT STRUCTURE
+         =========================== -->
+    <section id="structure">
+        <div class="container">
+            <span class="section-label reveal">Project Structure</span>
+            <h2 class="section-title reveal reveal-delay-1">프로젝트 구조</h2>
+
+            <div class="structure-block reveal reveal-delay-2">
+<span class="dir">MCP_agent/</span>
+├── <span class="file">graph.py</span> <span class="comment"># ReAct LangGraph</span>
+├── <span class="dir">agent/</span>
+│   ├── <span class="file">clova_mcp_gui.py</span> <span class="comment"># GUI</span>
+│   ├── <span class="file">persona_logic.py</span> <span class="comment"># 페르소나</span>
+│   └── <span class="dir">assets/</span> <span class="comment"># 이미지</span>
+├── <span class="dir">memory/</span>
+│   ├── <span class="file">interfaces.py</span> <span class="comment"># 인터페이스</span>
+│   ├── <span class="file">chroma_adapters.py</span>
+│   └── <span class="file">clova_adapters.py</span>
+├── <span class="dir">nodes/</span>
+│   ├── <span class="file">analyzer.py</span> <span class="comment"># 분석</span>
+│   ├── <span class="file">context_builder.py</span>
+│   └── <span class="file">memory_manager.py</span>
+├── <span class="dir">utils/</span>
+│   ├── <span class="file">google_calendar_service.py</span> <span class="comment"># Google Calendar 서비스</span>
+│   ├── <span class="file">sliding_window_executor.py</span> <span class="comment"># Sliding Window 실행기</span>
+│   └── <span class="file">summary_executor.py</span> <span class="comment"># 요약 실행기</span>
+└── <span class="dir">Fast-MCP/</span>
+    ├── <span class="dir">mcp_servers/</span> <span class="comment"># MCP 서버</span>
+    └── <span class="dir">scripts/</span> <span class="comment"># 스크립트</span></div>
+        </div>
+    </section>
+
+    <!-- ===========================
+         FOOTER
+         =========================== -->
+    <footer class="footer">
+        <div class="container">
+            <p>
+                <span class="gradient-text">부스트캠프 AI Tech NLP-05 팀</span>
+                &nbsp;&nbsp;|&nbsp;&nbsp;
+                Powered by CLOVA X, LangGraph, and FastMCP
+            </p>
+        </div>
+    </footer>
+
+</div><!-- .page-content -->
+
+<!-- ===========================
+     JAVASCRIPT
+     =========================== -->
+<script>
+(function() {
+    'use strict';
+
+    // ---- Scroll Reveal with IntersectionObserver ----
+    const revealElements = document.querySelectorAll('.reveal');
+
+    if ('IntersectionObserver' in window) {
+        const observer = new IntersectionObserver(function(entries) {
+            entries.forEach(function(entry) {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('visible');
+                    observer.unobserve(entry.target);
+                }
+            });
+        }, {
+            threshold: 0.12,
+            rootMargin: '0px 0px -40px 0px'
+        });
+
+        revealElements.forEach(function(el) {
+            observer.observe(el);
+        });
+    } else {
+        // Fallback: show everything
+        revealElements.forEach(function(el) {
+            el.classList.add('visible');
+        });
+    }
+
+    // ---- Mobile Hamburger Menu ----
+    var hamburger = document.getElementById('hamburger');
+    var headerNav = document.getElementById('headerNav');
+
+    if (hamburger && headerNav) {
+        hamburger.addEventListener('click', function() {
+            headerNav.classList.toggle('open');
+        });
+
+        // Close nav when a link is clicked
+        headerNav.querySelectorAll('a').forEach(function(link) {
+            link.addEventListener('click', function() {
+                headerNav.classList.remove('open');
+            });
+        });
+    }
+
+    // ---- Active nav highlight on scroll ----
+    var sections = document.querySelectorAll('section[id]');
+    var navLinks = document.querySelectorAll('.header-nav a');
+
+    function highlightNav() {
+        var scrollY = window.scrollY + 120;
+        sections.forEach(function(section) {
+            var top = section.offsetTop;
+            var height = section.offsetHeight;
+            var id = section.getAttribute('id');
+            if (scrollY >= top && scrollY < top + height) {
+                navLinks.forEach(function(link) {
+                    link.style.color = '';
+                    link.style.background = '';
+                    if (link.getAttribute('href') === '#' + id) {
+                        link.style.color = 'var(--text-primary)';
+                        link.style.background = 'var(--glass-hover)';
+                    }
+                });
+            }
+        });
+    }
+
+    window.addEventListener('scroll', highlightNav, { passive: true });
+    highlightNav();
+
+    // ---- Wide sprite detection map ----
+    // Images with 752x560 canvas (landscape) need special scaling
+    var wideSprites = {
+        'aya': { sad: true, angry: true },
+        'cirno': {},
+        'koishi': { basic: true, love: true, sad: true, angry: true, pouting: true, busy: true },
+        'marisa': { basic: true, love: true, sad: true, angry: true, pouting: true, busy: true }
+    };
+
+    function isWideSprite(charName, emotion) {
+        return wideSprites[charName] && wideSprites[charName][emotion];
+    }
+
+    function updateWideClass(sprite, charName, emotion) {
+        if (isWideSprite(charName, emotion)) {
+            sprite.classList.add('wide-sprite');
+        } else {
+            sprite.classList.remove('wide-sprite');
+        }
+    }
+
+    // ---- Sprite Animation (flipbook) ----
+    var FRAME_COUNT = 16;
+    var FRAME_INTERVAL = 100;
+    var spriteFrame = 0;
+
+    function animateSprites() {
+        spriteFrame = (spriteFrame + 1) % FRAME_COUNT;
+        var padded = String(spriteFrame).padStart(3, '0');
+        var sprites = document.querySelectorAll('.sprite-anim');
+        sprites.forEach(function(sprite) {
+            var charName = sprite.getAttribute('data-character');
+            var emotion = sprite.getAttribute('data-emotion');
+            if (charName && emotion) {
+                sprite.src = 'MCP_agent/agent/assets/' + charName + '/' + emotion + '/frame_' + padded + '.png';
+                updateWideClass(sprite, charName, emotion);
+            }
+        });
+    }
+
+    // Initial wide-class pass
+    document.querySelectorAll('.sprite-anim').forEach(function(sprite) {
+        var charName = sprite.getAttribute('data-character');
+        var emotion = sprite.getAttribute('data-emotion');
+        if (charName && emotion) updateWideClass(sprite, charName, emotion);
+    });
+
+    setInterval(animateSprites, FRAME_INTERVAL);
+
+    // ---- Character Tab Switching ----
+    var charTabBar = document.getElementById('charTabBar');
+    var emotionGrid = document.getElementById('emotionGrid');
+    var emotions = [
+        { id: 'basic', label: '기본' },
+        { id: 'happy', label: '호감도 +' },
+        { id: 'love', label: '호감도 최고' },
+        { id: 'sad', label: '호감도 -' },
+        { id: 'angry', label: '호감도 --' },
+        { id: 'pouting', label: '삐침' },
+        { id: 'busy', label: '도구 실행 중' }
+    ];
+
+    function switchCharacter(charName) {
+        if (!emotionGrid) return;
+        var cards = emotionGrid.querySelectorAll('.emotion-card');
+        cards.forEach(function(card, i) {
+            var img = card.querySelector('.sprite-anim');
+            if (img && emotions[i]) {
+                img.setAttribute('data-character', charName);
+                img.setAttribute('data-emotion', emotions[i].id);
+                var padded = String(spriteFrame).padStart(3, '0');
+                img.src = 'MCP_agent/agent/assets/' + charName + '/' + emotions[i].id + '/frame_' + padded + '.png';
+                updateWideClass(img, charName, emotions[i].id);
+            }
+        });
+    }
+
+    if (charTabBar) {
+        var tabs = charTabBar.querySelectorAll('.char-tab');
+        tabs.forEach(function(tab) {
+            tab.addEventListener('click', function() {
+                tabs.forEach(function(t) { t.classList.remove('active'); });
+                tab.classList.add('active');
+                switchCharacter(tab.getAttribute('data-char'));
+            });
+        });
+    }
+})();
+</script>
+</body>
+</html>

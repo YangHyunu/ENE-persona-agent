@@ -1,0 +1,170 @@
+# ══════════════════════════════════════════════════════════
+# eval_tool_config.yaml - 도구 호출 평가 설정
+# deep_eval_tool.py에서 참조
+#
+# 실제 MCP 서버 기반:
+#   naver_mcp.py  → web_search, naver_blog_search, naver_shopping_search, naver_place_search
+#   discord-mcp.py → send_message, read_messages, add_reaction
+#   slack MCP     → channels_list, conversations_history, conversations_add_message, conversations_search_messages
+# ══════════════════════════════════════════════════════════
+
+# ── 도구 설명 (실제 서버 docstring 기반) ──
+tool_descriptions:
+  web_search: "네이버 검색을 수행합니다. 시점이나 조건 등을 구체적으로 작성하세요."
+  naver_blog_search: "네이버 블로그 검색을 수행합니다. 후기, 리뷰, 경험담 등 블로그 콘텐츠를 검색합니다."
+  naver_shopping_search: "네이버 쇼핑 검색을 수행합니다. 상품 가격, 리뷰, 비교 정보를 검색합니다."
+  naver_place_search: "네이버 플레이스 검색을 수행합니다. 맛집, 카페, 장소 등 위치 기반 검색을 합니다."
+  send_message: "디스코드 채널에 메시지를 전송합니다. channel_id와 content가 필요합니다."
+  read_messages: "디스코드 채널의 최근 메시지를 읽습니다. channel_id와 limit(기본 10)이 필요합니다."
+  add_reaction: "디스코드 메시지에 리액션(이모지)을 추가합니다. channel_id, message_id, emoji가 필요합니다."
+  channels_list: "슬랙 채널 목록을 조회합니다. 채널 ID를 모를 때 먼저 호출합니다."
+  conversations_history: "슬랙 채널의 대화 내역을 조회합니다. channel_id와 limit이 필요합니다."
+  conversations_add_message: "슬랙 채널에 메시지를 전송합니다. channel_id와 text가 필요합니다."
+  conversations_search_messages: "슬랙 메시지를 검색합니다. query로 키워드 검색합니다."
+
+# ── 도구 호출 시나리오 ──
+# expected: 기대하는 도구 호출 순서 (빈 배열 = 도구 불필요)
+scenarios:
+
+  # ═══ 검색 — 네이버 플레이스 ═══
+  - input: "강남 맛집 추천해줘"
+    expected: [naver_place_search]
+    category: "검색-플레이스"
+
+  - input: "홍대 근처 카페 알려줘"
+    expected: [naver_place_search]
+    category: "검색-플레이스"
+
+  - input: "명동에 괜찮은 삼겹살집 있어?"
+    expected: [naver_place_search]
+    category: "검색-플레이스"
+
+  # ═══ 검색 — 네이버 블로그 ═══
+  - input: "맛집 블로그 후기 찾아줘"
+    expected: [naver_blog_search]
+    category: "검색-블로그"
+
+  - input: "제주도 여행 후기 블로그 검색해줘"
+    expected: [naver_blog_search]
+    category: "검색-블로그"
+
+  - input: "아이폰 16 사용 후기 블로그 찾아봐"
+    expected: [naver_blog_search]
+    category: "검색-블로그"
+
+  # ═══ 검색 — 네이버 쇼핑 ═══
+  - input: "요즘 인기있는 블루투스 이어폰 뭐야?"
+    expected: [naver_shopping_search]
+    category: "검색-쇼핑"
+
+  - input: "가성비 좋은 기계식 키보드 추천해줘"
+    expected: [naver_shopping_search]
+    category: "검색-쇼핑"
+
+  - input: "나이키 에어맥스 가격 비교해줘"
+    expected: [naver_shopping_search]
+    category: "검색-쇼핑"
+
+  # ═══ 검색 — 웹 (일반/뉴스/날씨) ═══
+  - input: "서울 날씨 어때?"
+    expected: [web_search]
+    category: "검색-웹"
+
+  - input: "오늘 주요 뉴스 뭐야?"
+    expected: [web_search]
+    category: "검색-웹"
+
+  - input: "파이썬 3.13 새 기능이 뭐야?"
+    expected: [web_search]
+    category: "검색-웹"
+
+  # ═══ 디스코드 — 메시지 전송 ═══
+  - input: "디스코드 general 채널에 '회의 시작합니다' 보내줘"
+    expected: [send_message]
+    category: "디스코드"
+
+  - input: "디스코드 공지 채널에 '내일 오후 3시 미팅' 전달해줘"
+    expected: [send_message]
+    category: "디스코드"
+
+  # ═══ 디스코드 — 메시지 읽기 ═══
+  - input: "디스코드 general 채널 최근 메시지 보여줘"
+    expected: [read_messages]
+    category: "디스코드"
+
+  - input: "디스코드 개발 채널에서 최근 대화 5개만 읽어줘"
+    expected: [read_messages]
+    category: "디스코드"
+
+  # ═══ 디스코드 — 리액션 ═══
+  - input: "디스코드 general 채널 마지막 메시지에 👍 리액션 달아줘"
+    expected: [read_messages, add_reaction]
+    category: "디스코드"
+
+  # ═══ 슬랙 — 채널 목록 ═══
+  - input: "슬랙 채널 목록 보여줘"
+    expected: [channels_list]
+    category: "슬랙"
+
+  # ═══ 슬랙 — 메시지 전송 (채널 ID 모름 → channels_list 먼저) ═══
+  - input: "슬랙에 '회의 시작합니다' 보내줘"
+    expected: [channels_list, conversations_add_message]
+    category: "슬랙"
+
+  - input: "슬랙 개발 채널에 '배포 완료' 알려줘"
+    expected: [channels_list, conversations_add_message]
+    category: "슬랙"
+
+  # ═══ 슬랙 — 대화 내역 조회 ═══
+  - input: "슬랙에서 오늘 대화 내역 보여줘"
+    expected: [channels_list, conversations_history]
+    category: "슬랙"
+
+  # ═══ 슬랙 — 메시지 검색 ═══
+  - input: "슬랙에서 '배포' 관련 메시지 찾아줘"
+    expected: [conversations_search_messages]
+    category: "슬랙"
+
+  - input: "슬랙에서 지난주 회의록 검색해줘"
+    expected: [conversations_search_messages]
+    category: "슬랙"
+
+  # ═══ 복합 — 검색 → 디스코드 전송 ═══
+  - input: "강남 맛집 검색해서 디스코드 general 채널에 보내줘"
+    expected: [naver_place_search, send_message]
+    category: "복합"
+
+  - input: "오늘 날씨 검색해서 디스코드 일상 채널에 공유해줘"
+    expected: [web_search, send_message]
+    category: "복합"
+
+  # ═══ 복합 — 검색 → 슬랙 전송 ═══
+  - input: "서울 날씨 검색해서 슬랙에 보내줘"
+    expected: [web_search, channels_list, conversations_add_message]
+    category: "복합"
+
+  - input: "인기 이어폰 검색해서 슬랙 쇼핑 채널에 올려줘"
+    expected: [naver_shopping_search, channels_list, conversations_add_message]
+    category: "복합"
+
+  # ═══ 복합 — 디스코드 읽기 → 슬랙 전달 ═══
+  - input: "디스코드 general 채널 최근 대화 읽어서 슬랙에 전달해줘"
+    expected: [read_messages, channels_list, conversations_add_message]
+    category: "복합"
+
+  # ═══ 대화 — 도구 불필요 ═══
+  - input: "오늘 기분이 좋아"
+    expected: []
+    category: "대화"
+
+  - input: "고마워 수고했어"
+    expected: []
+    category: "대화"
+
+  - input: "넌 이름이 뭐야?"
+    expected: []
+    category: "대화"
+
+  - input: "심심한데 재밌는 얘기 해줘"
+    expected: []
+    category: "대화"
